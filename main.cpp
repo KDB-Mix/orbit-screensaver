@@ -57,6 +57,7 @@ static std::string getCfgPath() {
 #define BG_TRANSPARENT 1
 #define BG_TINT 2
 #define BG_FADE 3
+#define BG_BLUR 4
 
 struct Settings {
     int speed;
@@ -120,11 +121,11 @@ static void runConfigTerminal() {
         strncpy(g_settings.cube_path, pbuf, 511);
     }
 
-    printf("bg mode - 0=black 1=transparent 2=tint 3=fade [current: %d]: ", g_settings.bg_mode);
+    printf("bg mode - 0=black 1=transparent 2=tint 3=fade 4=blur [current: %d]: ", g_settings.bg_mode);
     fflush(stdout);
     if (fgets(buf, sizeof(buf), stdin) && buf[0] != '\n') {
         int v = atoi(buf);
-        if (v >= 0 && v <= 3) g_settings.bg_mode = v;
+        if (v >= 0 && v <= 4) g_settings.bg_mode = v;
     }
 
     saveCfg();
@@ -141,6 +142,7 @@ static void runConfigTerminal() {
 #define IDC_BG_TRANS     106
 #define IDC_BG_TINT      107
 #define IDC_BG_FADE      108
+#define IDC_BG_BLUR      111
 #define IDC_SAVE         109
 #define IDC_PREVIEW      110
 
@@ -187,23 +189,24 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         mkRadio("Transparent", IDC_BG_TRANS, 110, 136, 100, 20, false);
         mkRadio("Dark tint",   IDC_BG_TINT,  110, 158, 100, 20, false);
         mkRadio("Fade to black",IDC_BG_FADE, 110, 180, 120, 20, false);
+        mkRadio("Blur",          IDC_BG_BLUR, 110, 202, 120, 20, false);
 
         // check correct radio
-        int radioIds[] = {IDC_BG_BLACK,IDC_BG_TRANS,IDC_BG_TINT,IDC_BG_FADE};
+        int radioIds[] = {IDC_BG_BLACK,IDC_BG_TRANS,IDC_BG_TINT,IDC_BG_FADE,IDC_BG_BLUR};
         CheckDlgButton(hwnd, radioIds[g_settings.bg_mode], BST_CHECKED);
 
-        mkBtn("Save",    IDC_SAVE,    90,  212, 80, 28);
-        mkBtn("Preview", IDC_PREVIEW, 180, 212, 80, 28);
+        mkBtn("Save",    IDC_SAVE,    90,  234, 80, 28);
+        mkBtn("Preview", IDC_PREVIEW, 180, 234, 80, 28);
 
         // credits - links via static with hand cursor, handle in WM_CTLCOLORSTATIC
-        mkLabel("by ", 70, 250, 25, 18);
-        HWND lMalik = CreateWindowA("BUTTON","MalikHw47",WS_CHILD|WS_VISIBLE|BS_OWNERDRAW,94,248,72,20,hwnd,(HMENU)201,0,0);
+        mkLabel("by ", 70, 272, 25, 18);
+        HWND lMalik = CreateWindowA("BUTTON","MalikHw47",WS_CHILD|WS_VISIBLE|BS_OWNERDRAW,94,270,72,20,hwnd,(HMENU)201,0,0);
         SendMessage(lMalik,WM_SETFONT,(WPARAM)font,TRUE);
-        mkLabel(" - ", 168,250,18,18);
-        HWND lYT = CreateWindowA("BUTTON","youtube",WS_CHILD|WS_VISIBLE|BS_OWNERDRAW,186,248,58,20,hwnd,(HMENU)202,0,0);
+        mkLabel(" - ", 168,272,18,18);
+        HWND lYT = CreateWindowA("BUTTON","youtube",WS_CHILD|WS_VISIBLE|BS_OWNERDRAW,186,270,58,20,hwnd,(HMENU)202,0,0);
         SendMessage(lYT,WM_SETFONT,(WPARAM)font,TRUE);
-        mkLabel(" - ", 246,250,18,18);
-        HWND lGH = CreateWindowA("BUTTON","github",WS_CHILD|WS_VISIBLE|BS_OWNERDRAW,264,248,52,20,hwnd,(HMENU)203,0,0);
+        mkLabel(" - ", 246,272,18,18);
+        HWND lGH = CreateWindowA("BUTTON","github",WS_CHILD|WS_VISIBLE|BS_OWNERDRAW,264,270,52,20,hwnd,(HMENU)203,0,0);
         SendMessage(lGH,WM_SETFONT,(WPARAM)font,TRUE);
 
         return 0;
@@ -250,8 +253,8 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             g_settings.speed = (int)SendDlgItemMessage(hwnd,IDC_SPEED_SLIDER,TBM_GETPOS,0,0);
             char buf[512]; GetDlgItemTextA(hwnd,IDC_CUBE_EDIT,buf,sizeof(buf));
             strncpy(g_settings.cube_path,buf,511);
-            int radioIds[]={IDC_BG_BLACK,IDC_BG_TRANS,IDC_BG_TINT,IDC_BG_FADE};
-            for(int i=0;i<4;i++) if(IsDlgButtonChecked(hwnd,radioIds[i])) g_settings.bg_mode=i;
+            int radioIds[]={IDC_BG_BLACK,IDC_BG_TRANS,IDC_BG_TINT,IDC_BG_FADE,IDC_BG_BLUR};
+            for(int i=0;i<5;i++) if(IsDlgButtonChecked(hwnd,radioIds[i])) g_settings.bg_mode=i;
             saveCfg();
             if (id==IDC_PREVIEW) { g_preview_clicked=true; DestroyWindow(hwnd); }
             else MessageBoxA(hwnd,"Settings saved!","Orbit",MB_OK|MB_ICONINFORMATION);
@@ -274,7 +277,7 @@ static bool runWin32Settings() {
 
     HWND hwnd = CreateWindowA("OrbitSettings","Orbit Screensaver - Settings",
         WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,
-        CW_USEDEFAULT,CW_USEDEFAULT,360,300,0,0,0,0);
+        CW_USEDEFAULT,CW_USEDEFAULT,360,330,0,0,0,0);
     ShowWindow(hwnd,SW_SHOW);
     UpdateWindow(hwnd);
 
@@ -425,27 +428,45 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
         cubeTex = loadTexture(path);
     } else cubeTex = loadTexture(cubeSrc);
 
-    // win32 transparency via DWM - actually works with opengl unlike colorkey lmao
+    // proper compositor-aware GL transparency
 #ifdef _WIN32
-    bool useTransparency = !isPreview && (g_settings.bg_mode==BG_TRANSPARENT||g_settings.bg_mode==BG_TINT||g_settings.bg_mode==BG_FADE);
+    bool useTransparency = !isPreview && (g_settings.bg_mode==BG_TRANSPARENT||g_settings.bg_mode==BG_TINT||g_settings.bg_mode==BG_FADE||g_settings.bg_mode==BG_BLUR);
     HWND sdlHwnd = nullptr;
     if(useTransparency) {
         SDL_SysWMinfo wmi; SDL_VERSION(&wmi.version);
         if(SDL_GetWindowWMInfo(win,&wmi)) sdlHwnd=wmi.info.win.window;
         if(sdlHwnd) {
-            // DWM blur behind = real compositor transparency
-            DWM_BLURBEHIND bb = {};
-            bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
-            bb.fEnable = TRUE;
-            HRGN rgn = CreateRectRgn(0,0,-1,-1); // empty region = full window
-            bb.hRgnBlur = rgn;
-            DwmEnableBlurBehindWindow(sdlHwnd, &bb);
-            DeleteObject(rgn);
-            // also set WS_EX_LAYERED for fade mode alpha control
+            // step 1: get the DC and set a compositor-aware pixel format
+            HDC hdc = GetDC(sdlHwnd);
+            PIXELFORMATDESCRIPTOR pfd = {};
+            pfd.nSize = sizeof(pfd);
+            pfd.nVersion = 1;
+            pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER | PFD_SUPPORT_COMPOSITION;
+            pfd.iPixelType = PFD_TYPE_RGBA;
+            pfd.cColorBits = 32;
+            pfd.cAlphaBits = 8;
+            pfd.iLayerType = PFD_MAIN_PLANE;
+            int fmt = ChoosePixelFormat(hdc, &pfd);
+            SetPixelFormat(hdc, fmt, &pfd);
+            ReleaseDC(sdlHwnd, hdc);
+
+            // step 2: extend DWM frame into entire client area (sheet of glass trick)
+            MARGINS margins = {-1,-1,-1,-1};
+            DwmExtendFrameIntoClientArea(sdlHwnd, &margins);
+
+            // step 3: blur behind for blur/transparent modes
+            if(g_settings.bg_mode==BG_BLUR||g_settings.bg_mode==BG_TRANSPARENT||g_settings.bg_mode==BG_TINT) {
+                DWM_BLURBEHIND bb = {};
+                bb.dwFlags = DWM_BB_ENABLE;
+                bb.fEnable = (g_settings.bg_mode==BG_BLUR) ? TRUE : FALSE;
+                DwmEnableBlurBehindWindow(sdlHwnd, &bb);
+            }
+
+            // step 4: fade starts invisible
             if(g_settings.bg_mode==BG_FADE) {
                 LONG style = GetWindowLong(sdlHwnd,GWL_EXSTYLE);
                 SetWindowLong(sdlHwnd,GWL_EXSTYLE,style|WS_EX_LAYERED);
-                SetLayeredWindowAttributes(sdlHwnd,0,0,LWA_ALPHA); // start invisible
+                SetLayeredWindowAttributes(sdlHwnd,0,0,LWA_ALPHA);
             }
         }
     }
@@ -576,8 +597,8 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
 
             // draw
             int bm=g_settings.bg_mode;
-            if(bm==BG_TRANSPARENT){
-                // alpha=0 + DWM blur behind = desktop shows through
+            if(bm==BG_TRANSPARENT||bm==BG_BLUR){
+                // alpha=0 lets DWM composite desktop (or blurred desktop) through
                 glClearColor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT);
             } else if(bm==BG_TINT){
                 glClearColor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT);
