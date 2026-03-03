@@ -6,45 +6,6 @@ on:
 
 jobs:
 
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libbox2d-dev \
-            libx11-dev \
-            libxext-dev \
-            cmake \
-            build-essential \
-            zip
-
-      - name: build
-        run: |
-          mkdir build-linux && cd build-linux
-          cmake .. -DCMAKE_BUILD_TYPE=Release
-          make -j$(nproc)
-
-      - name: package
-        run: |
-          mkdir -p dist-linux
-          cp build-linux/orbit_screensaver dist-linux/
-          cp orb*.png cube.png dist-linux/
-          cd dist-linux && zip -r ../orbit-linux.zip .
-
-      - name: upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: orbit-linux
-          path: orbit-linux.zip
-
   build-windows:
     runs-on: ubuntu-latest
     steps:
@@ -130,16 +91,11 @@ jobs:
           path: orbit-setup.exe
 
   release:
-    needs: [ build-linux, build-windows ]
+    needs: build-windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: orbit-linux
-          path: artifacts/
-
       - uses: actions/download-artifact@v4
         with:
           name: orbit-windows
@@ -155,6 +111,4 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: AUTOBUILD
           body: autofuckingbuilt
-          files: |
-            artifacts/orbit-linux.zip
-            artifacts/orbit-setup.exe
+          files: artifacts/orbit-setup.exe
