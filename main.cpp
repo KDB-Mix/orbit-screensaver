@@ -24,10 +24,6 @@
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "dwmapi.lib")
-#else
-#include <unistd.h>
-#include <X11/Xlib.h>
-#include <X11/Xatom.h>
 #endif
 #include <SDL2/SDL_syswm.h>
 
@@ -38,11 +34,6 @@ static std::string getCfgPath() {
     char path[MAX_PATH];
     SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, path);
     return std::string(path) + "\\" + CFG_FILE;
-}
-#else
-static std::string getCfgPath() {
-    const char* home = getenv("HOME");
-    return std::string(home ? home : ".") + "/.config/orbit_screensaver.ini";
 }
 #endif
 
@@ -84,16 +75,6 @@ static void loadCfg() {
 }
 
 static void saveCfg() {
-    // make dir if needed on linux
-#ifndef _WIN32
-    std::string dir = getCfgPath();
-    size_t slash = dir.rfind('/');
-    if (slash != std::string::npos) {
-        std::string d = dir.substr(0, slash);
-        char cmd[600]; snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", d.c_str());
-        system(cmd); // sue me
-    }
-#endif
     FILE* f = fopen(getCfgPath().c_str(), "w");
     if (!f) return;
     fprintf(f, "speed=%d\n", g_settings.speed);
@@ -102,37 +83,7 @@ static void saveCfg() {
     fclose(f);
 }
 
-// terminal config for linux (and windows i guess whatever)
-static void runConfigTerminal() {
-    loadCfg();
-    printf("=== orbit screensaver config ===\n");
 
-    printf("speed (1-20) [current: %d]: ", g_settings.speed);
-    fflush(stdout);
-    char buf[64]; 
-    if (fgets(buf, sizeof(buf), stdin) && buf[0] != '\n') {
-        int v = atoi(buf);
-        if (v >= 1 && v <= 20) g_settings.speed = v;
-    }
-
-    printf("cube path [current: %s]: ", g_settings.cube_path[0] ? g_settings.cube_path : "none");
-    fflush(stdout);
-    char pbuf[512];
-    if (fgets(pbuf, sizeof(pbuf), stdin) && pbuf[0] != '\n') {
-        pbuf[strcspn(pbuf, "\n")] = 0;
-        strncpy(g_settings.cube_path, pbuf, 511);
-    }
-
-    printf("bg mode - 0=black 1=transparent 2=tint 3=fade 4=blur [current: %d]: ", g_settings.bg_mode);
-    fflush(stdout);
-    if (fgets(buf, sizeof(buf), stdin) && buf[0] != '\n') {
-        int v = atoi(buf);
-        if (v >= 0 && v <= 4) g_settings.bg_mode = v;
-    }
-
-    saveCfg();
-    printf("saved. bye\n");
-}
 
 #ifdef _WIN32
 // win32 settings dialog - pure win32 api, no mfc no atl no nothing
@@ -350,7 +301,6 @@ struct Ball {
 };
 
 static std::string getAssetDir() {
-#ifdef _WIN32
     // read install dir from registry, fallback to localappdata
     char regPath[MAX_PATH] = "";
     DWORD sz = MAX_PATH;
@@ -363,8 +313,6 @@ static std::string getAssetDir() {
     char path[MAX_PATH];
     SHGetFolderPathA(NULL,CSIDL_LOCAL_APPDATA,NULL,0,path);
     return std::string(path) + "\\orbit";
-#else
-    return "/opt/orbit";
 #endif
 }
 
@@ -404,22 +352,12 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
         win = SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_OPENGL);
-#else
-        W=152; H=112;
-        SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);
-        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
-        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);
-        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
-        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
-        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
-        win = SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_OPENGL);
-#endif
     } else if(useTransparency) {
         SDL_DisplayMode dm; SDL_GetCurrentDisplayMode(0,&dm);
         W=dm.w; H=dm.h;
         // SDL_WINDOW_TRANSPARENT lets SDL handle ARGB pixel format internally
         win = SDL_CreateWindow("orbit",0,0,W,H,
-            SDL_WINDOW_OPENGL|SDL_WINDOW_FULLSCREEN_DESKTOP|SDL_WINDOW_BORDERLESS|SDL_WINDOW_TRANSPARENT);
+            SDL_WINDOW_OPENGL|SDL_WINDOW_FULLSCREEN_DESKTOP|SDL_WINDOW_BORDERLESS|(SDL_WindowFlags)0x40000000); // SDL_WINDOW_TRANSPARENT
         SDL_ShowCursor(SDL_DISABLE);
     } else {
         SDL_DisplayMode dm; SDL_GetCurrentDisplayMode(0,&dm);
@@ -448,32 +386,6 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
 #endif
     }
 
-#ifndef _WIN32
-    // linux transparency via X11 ARGB visual - wayland users ur on ur own lmao
-    bool linuxTransparency = false;
-    if(!isPreview && (g_settings.bg_mode==BG_TRANSPARENT||g_settings.bg_mode==BG_TINT||g_settings.bg_mode==BG_BLUR||g_settings.bg_mode==BG_FADE)) {
-        const char* wayland = getenv("WAYLAND_DISPLAY");
-        if(wayland) {
-            fprintf(stderr, "warning: transparency not supported on Wayland, falling back to black\n");
-        } else {
-            SDL_SysWMinfo wmi; SDL_VERSION(&wmi.version);
-            if(SDL_GetWindowWMInfo(win,&wmi) && wmi.subsystem==SDL_SYSWM_X11) {
-                Display* dpy = wmi.info.x11.display;
-                Window xwin = wmi.info.x11.window;
-                // set _NET_WM_WINDOW_TYPE and enable compositing
-                Atom wmWindowType = XInternAtom(dpy,"_NET_WM_WINDOW_TYPE",False);
-                Atom wmWindowTypeNormal = XInternAtom(dpy,"_NET_WM_WINDOW_TYPE_NORMAL",False);
-                XChangeProperty(dpy,xwin,wmWindowType,XA_ATOM,32,PropModeReplace,(unsigned char*)&wmWindowTypeNormal,1);
-                // tell compositor we want compositing
-                Atom wmBypassCompositor = XInternAtom(dpy,"_NET_WM_BYPASS_COMPOSITOR",False);
-                long bypass = 0;
-                XChangeProperty(dpy,xwin,wmBypassCompositor,XA_CARDINAL,32,PropModeReplace,(unsigned char*)&bypass,1);
-                XFlush(dpy);
-                linuxTransparency = true;
-            }
-        }
-    }
-#endif
 
     // get sdlHwnd for fade tick updates later
 #ifdef _WIN32
@@ -643,11 +555,7 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
 
             // draw
             int bm=g_settings.bg_mode;
-#ifdef _WIN32
-            bool canTransp = useTransparency;
-#else
-            bool canTransp = linuxTransparency;
-#endif
+bool canTransp = useTransparency;
             if((bm==BG_TRANSPARENT||bm==BG_BLUR) && canTransp){
                 glClearColor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT);
             } else if(bm==BG_TINT && canTransp){
@@ -739,15 +647,6 @@ int main(int argc, char** argv) {
     if(doConfig){ bool preview=runWin32Settings(); if(preview) runScreensaver(false,nullptr); }
     else if(doPreview) runScreensaver(true,(void*)previewHwnd);
     else runScreensaver(false,nullptr); // /s or bare launch
-#else
-    // linux args
-    bool doConfig=false;
-    for(int i=1;i<argc;i++){
-        std::string a(argv[i]);
-        if(a=="--configure"||a=="-c") doConfig=true;
-    }
-    if(doConfig) runConfigTerminal();
-    else runScreensaver(false,nullptr);
 #endif
 #ifdef _WIN32
     timeEndPeriod(1);
