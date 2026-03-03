@@ -19,7 +19,7 @@ Function DonationPage
     nsDialogs::Create 1044
     Pop $0
 
-    ${NSD_CreateLabel} 0 0 100% 20u "Hey! This screensaver is free. Wanna support the dev?"
+    ${NSD_CreateLabel} 0 0 100% 20u "Ts so hard to make so a donnation would be a W!"
     Pop $0
 
     ${NSD_CreateLink} 0 28u 100% 12u "Gift me MegaHack (discord: malikhw)"
@@ -42,7 +42,7 @@ Function DonationPage
     Pop $0
     ${NSD_OnClick} $0 OpenSource
 
-    ${NSD_CreateLabel} 0 122u 100% 14u "No pressure - just hit Next :)"
+    ${NSD_CreateLabel} 0 122u 100% 14u "If cant help ok"
     Pop $0
 
     nsDialogs::Show
@@ -61,7 +61,7 @@ Function OpenKofi
     ExecShell "open" "https://ko-fi.com/MalikHw47"
 FunctionEnd
 Function OpenSource
-    ExecShell "open" "https://github.com/MalikHw/orbit-screensaver-cpp"
+    ExecShell "open" "https://github.com/MalikHw/orbit-screensaver"
 FunctionEnd
 
 Function MesaPage
@@ -109,8 +109,7 @@ Section "Install"
     File "cube.png"
 
     ${If} $MesaAnswer == "yes"
-        IfFileExists "$EXEDIR\opengl32.dll" 0 +2
-            File "$EXEDIR\opengl32.dll"
+        File /nonfatal "$EXEDIR\opengl32.dll"
     ${EndIf}
 
     ; stub scr to system32
