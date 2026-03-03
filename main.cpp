@@ -361,7 +361,6 @@ static std::string getExeDir() {
 // the actual screensaver loop
 static void runScreensaver(bool isPreview, void* previewHandle) {
 #ifdef _WIN32
-    // MUST set SDL_WINDOWID before SDL_Init or embedding wont work
     HWND parentHwnd = (HWND)previewHandle;
     if(isPreview && parentHwnd) {
         char envbuf[128];
@@ -374,37 +373,121 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)<0){fprintf(stderr,"sdl died lmao\n");return;}
     IMG_Init(IMG_INIT_PNG);
 
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
-
     int W,H;
     SDL_Window* win;
-    Uint32 winFlags = SDL_WINDOW_OPENGL;
+    bool useTransparency = false;
+
+#ifdef _WIN32
+    useTransparency = !isPreview && (g_settings.bg_mode==BG_TRANSPARENT||g_settings.bg_mode==BG_TINT||g_settings.bg_mode==BG_FADE||g_settings.bg_mode==BG_BLUR);
+#endif
 
     if(isPreview) {
 #ifdef _WIN32
-        // get actual size of the preview box
         RECT rc; GetClientRect(parentHwnd, &rc);
-        W = rc.right  - rc.left; if(W<=0) W=152;
-        H = rc.bottom - rc.top;  if(H<=0) H=112;
+        W = rc.right-rc.left; if(W<=0) W=152;
+        H = rc.bottom-rc.top; if(H<=0) H=112;
+        // preview always uses SDL GL path
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
+        win = SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_OPENGL);
 #else
         W=152; H=112;
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
+        win = SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_OPENGL);
 #endif
-        win = SDL_CreateWindow("orbit",0,0,W,H,winFlags);
+    } else if(useTransparency) {
+#ifdef _WIN32
+        // for transparency: create window WITHOUT opengl first so we can set pixel format before GL init
+        SDL_DisplayMode dm; SDL_GetCurrentDisplayMode(0,&dm);
+        W=dm.w; H=dm.h;
+        win = SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_FULLSCREEN_DESKTOP|SDL_WINDOW_BORDERLESS);
+        SDL_ShowCursor(SDL_DISABLE);
+
+        // grab HWND before any GL context exists
+        SDL_SysWMinfo wmi; SDL_VERSION(&wmi.version);
+        SDL_GetWindowWMInfo(win,&wmi);
+        HWND sdlHwnd = wmi.info.win.window;
+
+        // set compositor-aware pixel format BEFORE creating GL context
+        HDC hdc = GetDC(sdlHwnd);
+        PIXELFORMATDESCRIPTOR pfd = {};
+        pfd.nSize = sizeof(pfd);
+        pfd.nVersion = 1;
+        pfd.dwFlags = PFD_DRAW_TO_WINDOW|PFD_SUPPORT_OPENGL|PFD_DOUBLEBUFFER|PFD_SUPPORT_COMPOSITION;
+        pfd.iPixelType = PFD_TYPE_RGBA;
+        pfd.cColorBits = 32;
+        pfd.cAlphaBits = 8;
+        pfd.iLayerType = PFD_MAIN_PLANE;
+        int fmt = ChoosePixelFormat(hdc, &pfd);
+        SetPixelFormat(hdc, fmt, &pfd);
+
+        // create GL context manually via WGL now that pixel format is set
+        HGLRC glrc = wglCreateContext(hdc);
+        wglMakeCurrent(hdc, glrc);
+        ReleaseDC(sdlHwnd, hdc);
+
+        // NOW set up DWM transparency
+        MARGINS margins = {-1,-1,-1,-1};
+        DwmExtendFrameIntoClientArea(sdlHwnd, &margins);
+
+        if(g_settings.bg_mode==BG_BLUR) {
+            DWM_BLURBEHIND bb = {};
+            bb.dwFlags = DWM_BB_ENABLE;
+            bb.fEnable = TRUE;
+            DwmEnableBlurBehindWindow(sdlHwnd, &bb);
+        }
+        if(g_settings.bg_mode==BG_FADE) {
+            LONG style = GetWindowLong(sdlHwnd,GWL_EXSTYLE);
+            SetWindowLong(sdlHwnd,GWL_EXSTYLE,style|WS_EX_LAYERED);
+            SetLayeredWindowAttributes(sdlHwnd,0,0,LWA_ALPHA);
+        }
+#endif
     } else {
         SDL_DisplayMode dm; SDL_GetCurrentDisplayMode(0,&dm);
         W=dm.w; H=dm.h;
-        win = SDL_CreateWindow("orbit",0,0,W,H,winFlags|SDL_WINDOW_FULLSCREEN_DESKTOP|SDL_WINDOW_BORDERLESS);
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
+        win = SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_OPENGL|SDL_WINDOW_FULLSCREEN_DESKTOP|SDL_WINDOW_BORDERLESS);
         SDL_ShowCursor(SDL_DISABLE);
     }
 
     if(!win){fprintf(stderr,"window said no\n");SDL_Quit();return;}
-    SDL_GLContext ctx = SDL_GL_CreateContext(win);
-    SDL_GL_SetSwapInterval(1); // vsync
+
+    SDL_GLContext ctx = nullptr;
+    if(!useTransparency) {
+        ctx = SDL_GL_CreateContext(win);
+        SDL_GL_SetSwapInterval(1); // vsync
+    } else {
+#ifdef _WIN32
+        // vsync via wgl since we bypassed SDL GL
+        typedef BOOL (WINAPI *PFNWGLSWAPINTERVALEXTPROC)(int);
+        PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
+        if(wglSwapIntervalEXT) wglSwapIntervalEXT(1);
+#endif
+    }
+
+    // get sdlHwnd for fade tick updates later
+#ifdef _WIN32
+    HWND sdlHwnd = nullptr;
+    if(useTransparency) {
+        SDL_SysWMinfo wmi2; SDL_VERSION(&wmi2.version);
+        SDL_GetWindowWMInfo(win,&wmi2);
+        sdlHwnd = wmi2.info.win.window;
+    }
+#endif
 
     // ortho projection, y down
     glMatrixMode(GL_PROJECTION);
@@ -427,50 +510,6 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
         char path[600]; snprintf(path,sizeof(path),"%s/cube.png",exeDir.c_str());
         cubeTex = loadTexture(path);
     } else cubeTex = loadTexture(cubeSrc);
-
-    // proper compositor-aware GL transparency
-#ifdef _WIN32
-    bool useTransparency = !isPreview && (g_settings.bg_mode==BG_TRANSPARENT||g_settings.bg_mode==BG_TINT||g_settings.bg_mode==BG_FADE||g_settings.bg_mode==BG_BLUR);
-    HWND sdlHwnd = nullptr;
-    if(useTransparency) {
-        SDL_SysWMinfo wmi; SDL_VERSION(&wmi.version);
-        if(SDL_GetWindowWMInfo(win,&wmi)) sdlHwnd=wmi.info.win.window;
-        if(sdlHwnd) {
-            // step 1: get the DC and set a compositor-aware pixel format
-            HDC hdc = GetDC(sdlHwnd);
-            PIXELFORMATDESCRIPTOR pfd = {};
-            pfd.nSize = sizeof(pfd);
-            pfd.nVersion = 1;
-            pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER | PFD_SUPPORT_COMPOSITION;
-            pfd.iPixelType = PFD_TYPE_RGBA;
-            pfd.cColorBits = 32;
-            pfd.cAlphaBits = 8;
-            pfd.iLayerType = PFD_MAIN_PLANE;
-            int fmt = ChoosePixelFormat(hdc, &pfd);
-            SetPixelFormat(hdc, fmt, &pfd);
-            ReleaseDC(sdlHwnd, hdc);
-
-            // step 2: extend DWM frame into entire client area (sheet of glass trick)
-            MARGINS margins = {-1,-1,-1,-1};
-            DwmExtendFrameIntoClientArea(sdlHwnd, &margins);
-
-            // step 3: blur behind for blur/transparent modes
-            if(g_settings.bg_mode==BG_BLUR||g_settings.bg_mode==BG_TRANSPARENT||g_settings.bg_mode==BG_TINT) {
-                DWM_BLURBEHIND bb = {};
-                bb.dwFlags = DWM_BB_ENABLE;
-                bb.fEnable = (g_settings.bg_mode==BG_BLUR) ? TRUE : FALSE;
-                DwmEnableBlurBehindWindow(sdlHwnd, &bb);
-            }
-
-            // step 4: fade starts invisible
-            if(g_settings.bg_mode==BG_FADE) {
-                LONG style = GetWindowLong(sdlHwnd,GWL_EXSTYLE);
-                SetWindowLong(sdlHwnd,GWL_EXSTYLE,style|WS_EX_LAYERED);
-                SetLayeredWindowAttributes(sdlHwnd,0,0,LWA_ALPHA);
-            }
-        }
-    }
-#endif
 
     srand((unsigned)time(nullptr));
     bool running = true;
@@ -644,7 +683,12 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
                 }
             }
 
+#ifdef _WIN32
+            if(useTransparency) { HDC _hdc=GetDC(sdlHwnd); SwapBuffers(_hdc); ReleaseDC(sdlHwnd,_hdc); }
+            else SDL_GL_SwapWindow(win);
+#else
             SDL_GL_SwapWindow(win);
+#endif
 
             // cap to TICK_RATE
             Uint32 elapsed=SDL_GetTicks()-now;
