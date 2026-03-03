@@ -62,6 +62,8 @@ else()
         GL
         dl
         m
+        X11
+        Xext
     )
 endif()
 

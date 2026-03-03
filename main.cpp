@@ -26,6 +26,8 @@
 #pragma comment(lib, "dwmapi.lib")
 #else
 #include <unistd.h>
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #endif
 #include <SDL2/SDL_syswm.h>
 
@@ -347,14 +349,22 @@ struct Ball {
     bool isPlayer;
 };
 
-static std::string getExeDir() {
+static std::string getAssetDir() {
 #ifdef _WIN32
-    char buf[MAX_PATH]; GetModuleFileNameA(0,buf,MAX_PATH);
-    std::string s(buf); return s.substr(0,s.rfind('\\'));
+    // read install dir from registry, fallback to localappdata
+    char regPath[MAX_PATH] = "";
+    DWORD sz = MAX_PATH;
+    HKEY key;
+    if(RegOpenKeyExA(HKEY_CURRENT_USER,"Software\\Orbit",0,KEY_READ,&key)==ERROR_SUCCESS) {
+        RegQueryValueExA(key,"InstallDir",0,0,(LPBYTE)regPath,&sz);
+        RegCloseKey(key);
+    }
+    if(regPath[0]) return std::string(regPath);
+    char path[MAX_PATH];
+    SHGetFolderPathA(NULL,CSIDL_LOCAL_APPDATA,NULL,0,path);
+    return std::string(path) + "\\orbit";
 #else
-    char buf[4096]; ssize_t n=readlink("/proc/self/exe",buf,sizeof(buf)-1);
-    if(n>0){buf[n]=0;std::string s(buf);return s.substr(0,s.rfind('/'));}
-    return ".";
+    return "/opt/orbit";
 #endif
 }
 
@@ -469,15 +479,41 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
     SDL_GLContext ctx = nullptr;
     if(!useTransparency) {
         ctx = SDL_GL_CreateContext(win);
-        SDL_GL_SetSwapInterval(1); // vsync
+        SDL_GL_SetSwapInterval(1);
     } else {
 #ifdef _WIN32
-        // vsync via wgl since we bypassed SDL GL
         typedef BOOL (WINAPI *PFNWGLSWAPINTERVALEXTPROC)(int);
         PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
         if(wglSwapIntervalEXT) wglSwapIntervalEXT(1);
 #endif
     }
+
+#ifndef _WIN32
+    // linux transparency via X11 ARGB visual - wayland users ur on ur own lmao
+    bool linuxTransparency = false;
+    if(!isPreview && (g_settings.bg_mode==BG_TRANSPARENT||g_settings.bg_mode==BG_TINT||g_settings.bg_mode==BG_BLUR||g_settings.bg_mode==BG_FADE)) {
+        const char* wayland = getenv("WAYLAND_DISPLAY");
+        if(wayland) {
+            fprintf(stderr, "warning: transparency not supported on Wayland, falling back to black\n");
+        } else {
+            SDL_SysWMinfo wmi; SDL_VERSION(&wmi.version);
+            if(SDL_GetWindowWMInfo(win,&wmi) && wmi.subsystem==SDL_SYSWM_X11) {
+                Display* dpy = wmi.info.x11.display;
+                Window xwin = wmi.info.x11.window;
+                // set _NET_WM_WINDOW_TYPE and enable compositing
+                Atom wmWindowType = XInternAtom(dpy,"_NET_WM_WINDOW_TYPE",False);
+                Atom wmWindowTypeNormal = XInternAtom(dpy,"_NET_WM_WINDOW_TYPE_NORMAL",False);
+                XChangeProperty(dpy,xwin,wmWindowType,XA_ATOM,32,PropModeReplace,(unsigned char*)&wmWindowTypeNormal,1);
+                // tell compositor we want compositing
+                Atom wmBypassCompositor = XInternAtom(dpy,"_NET_WM_BYPASS_COMPOSITOR",False);
+                long bypass = 0;
+                XChangeProperty(dpy,xwin,wmBypassCompositor,XA_CARDINAL,32,PropModeReplace,(unsigned char*)&bypass,1);
+                XFlush(dpy);
+                linuxTransparency = true;
+            }
+        }
+    }
+#endif
 
     // get sdlHwnd for fade tick updates later
 #ifdef _WIN32
@@ -498,16 +534,16 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
     glDisable(GL_DEPTH_TEST);
 
     // load textures
-    std::string exeDir = getExeDir();
+    std::string assetDir = getAssetDir();
     Texture orbTex[NUM_ORBS];
     for(int i=0;i<NUM_ORBS;i++){
-        char path[600]; snprintf(path,sizeof(path),"%s/orb%d.png",exeDir.c_str(),i+1);
+        char path[600]; snprintf(path,sizeof(path),"%s/orb%d.png",assetDir.c_str(),i+1);
         orbTex[i] = loadTexture(path);
     }
     Texture cubeTex = {0,0,0,false};
     const char* cubeSrc = g_settings.cube_path[0] ? g_settings.cube_path : nullptr;
     if(!cubeSrc){
-        char path[600]; snprintf(path,sizeof(path),"%s/cube.png",exeDir.c_str());
+        char path[600]; snprintf(path,sizeof(path),"%s/cube.png",assetDir.c_str());
         cubeTex = loadTexture(path);
     } else cubeTex = loadTexture(cubeSrc);
 
@@ -636,10 +672,14 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
 
             // draw
             int bm=g_settings.bg_mode;
-            if(bm==BG_TRANSPARENT||bm==BG_BLUR){
-                // alpha=0 lets DWM composite desktop (or blurred desktop) through
+#ifdef _WIN32
+            bool canTransp = useTransparency;
+#else
+            bool canTransp = linuxTransparency;
+#endif
+            if((bm==BG_TRANSPARENT||bm==BG_BLUR) && canTransp){
                 glClearColor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT);
-            } else if(bm==BG_TINT){
+            } else if(bm==BG_TINT && canTransp){
                 glClearColor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT);
                 glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
                 glColor4f(0,0,0,0.47f);
