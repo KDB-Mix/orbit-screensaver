@@ -10,57 +10,10 @@ Var MesaAnswer
 
 !define MUI_ABORTWARNING
 
-Page custom DonationPage
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
-Function DonationPage
-    nsDialogs::Create 1044
-    Pop $0
 
-    ${NSD_CreateLabel} 0 0 100% 24u "Ts so hard to make so a donation would be a W!"
-    Pop $0
-    ${NSD_CreateLabel} 0 26u 100% 16u "if cant its ok :)"
-    Pop $0
-
-    ${NSD_CreateLink} 0 52u 100% 14u "Gift me MegaHack (discord: malikhw)"
-    Pop $0
-    ${NSD_OnClick} $0 OpenMegaHack
-
-    ${NSD_CreateLink} 0 70u 100% 14u "Get me a gift (Throne wishlist)"
-    Pop $0
-    ${NSD_OnClick} $0 OpenThrone
-
-    ${NSD_CreateLink} 0 88u 100% 14u "Join the Discord server"
-    Pop $0
-    ${NSD_OnClick} $0 OpenDiscord
-
-    ${NSD_CreateLink} 0 106u 100% 14u "Ko-fi donation"
-    Pop $0
-    ${NSD_OnClick} $0 OpenKofi
-
-    ${NSD_CreateLink} 0 124u 100% 14u "Source code on GitHub"
-    Pop $0
-    ${NSD_OnClick} $0 OpenSource
-
-    nsDialogs::Show
-FunctionEnd
-
-Function OpenMegaHack
-    ExecShell "open" "https://absolllute.com/store/mega_hack?gift=1"
-FunctionEnd
-Function OpenThrone
-    ExecShell "open" "https://throne.com/MalikHw47"
-FunctionEnd
-Function OpenDiscord
-    ExecShell "open" "https://discord.gg/G9bZ92eg2n"
-FunctionEnd
-Function OpenKofi
-    ExecShell "open" "https://ko-fi.com/MalikHw47"
-FunctionEnd
-Function OpenSource
-    ExecShell "open" "https://github.com/MalikHw/orbit-screensaver-cpp"
-FunctionEnd
 
 
 
