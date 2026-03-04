@@ -1,4 +1,4 @@
-[![Watch the showcase](preview.png)](showcase.mp4)
+[![Orbit Screensaver Showcase](https://img.youtube.com/vi/sLoUGocFqqk/maxresdefault.jpg)](https://youtu.be/sLoUGocFqqk)
 
 # Orbit Screensaver
 
