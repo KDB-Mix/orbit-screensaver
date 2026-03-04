@@ -21,33 +21,37 @@
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "advapi32.lib")
 #include <SDL2/SDL_syswm.h>
 
 // bg modes
-#define BG_BLACK  0
-#define BG_COLOR  1
-#define BG_IMAGE  2
+#define BG_BLACK     0
+#define BG_COLOR     1
+#define BG_IMAGE     2
+#define BG_SNAPSHOT  3
+#define BG_BLUR_SNAP 4
 
 // image fit modes
 #define FIT_STRETCH 0
 #define FIT_ZOOM    1
 #define FIT_TILE    2
 
-#define NUM_BALLS  120
-#define NUM_ORBS   10
-#define PPM        40.0f
+#define NUM_BALLS   120
+#define NUM_ORBS    10
+#define PPM         40.0f
 #define PLAYER_SIZE 80
 
 struct Settings {
-    int   speed;      // 1-20
-    int   fps;        // e.g. 60
-    int   bg_mode;
+    int      speed;
+    int      fps;
+    int      bg_mode;
     COLORREF bg_color;
-    char  bg_image[512];
-    int   bg_fit;
-    char  cube_path[512];
+    char     bg_image[512];
+    int      bg_fit;
+    char     cube_path[512];
+    bool     no_ground;
 };
-static Settings g_settings = { 10, 60, BG_BLACK, RGB(30,30,30), "", FIT_STRETCH, "" };
+static Settings g_settings = { 10, 60, BG_BLACK, RGB(30,30,30), "", FIT_STRETCH, "", false };
 
 static std::string getCfgPath() {
     char path[MAX_PATH];
@@ -72,12 +76,13 @@ static void loadCfg() {
     char line[640];
     while(fgets(line,sizeof(line),f)){
         int iv; char sv[512]; unsigned int uv;
-        if(sscanf(line,"speed=%d",&iv)==1)      g_settings.speed=iv;
-        if(sscanf(line,"fps=%d",&iv)==1)         g_settings.fps=iv;
-        if(sscanf(line,"bg_mode=%d",&iv)==1)     g_settings.bg_mode=iv;
-        if(sscanf(line,"bg_color=%u",&uv)==1)    g_settings.bg_color=(COLORREF)uv;
-        if(sscanf(line,"bg_fit=%d",&iv)==1)      g_settings.bg_fit=iv;
-        if(sscanf(line,"bg_image=%511[^\n]",sv)==1) strncpy(g_settings.bg_image,sv,511);
+        if(sscanf(line,"speed=%d",&iv)==1)           g_settings.speed=iv;
+        if(sscanf(line,"fps=%d",&iv)==1)              g_settings.fps=iv;
+        if(sscanf(line,"bg_mode=%d",&iv)==1)          g_settings.bg_mode=iv;
+        if(sscanf(line,"bg_color=%u",&uv)==1)         g_settings.bg_color=(COLORREF)uv;
+        if(sscanf(line,"bg_fit=%d",&iv)==1)           g_settings.bg_fit=iv;
+        if(sscanf(line,"no_ground=%d",&iv)==1)        g_settings.no_ground=(iv!=0);
+        if(sscanf(line,"bg_image=%511[^\n]",sv)==1)  strncpy(g_settings.bg_image,sv,511);
         if(sscanf(line,"cube_path=%511[^\n]",sv)==1) strncpy(g_settings.cube_path,sv,511);
     }
     fclose(f);
@@ -89,9 +94,82 @@ static void saveCfg() {
     fprintf(f,"bg_mode=%d\n",g_settings.bg_mode);
     fprintf(f,"bg_color=%u\n",(unsigned)g_settings.bg_color);
     fprintf(f,"bg_fit=%d\n",g_settings.bg_fit);
+    fprintf(f,"no_ground=%d\n",(int)g_settings.no_ground);
     fprintf(f,"bg_image=%s\n",g_settings.bg_image);
     fprintf(f,"cube_path=%s\n",g_settings.cube_path);
     fclose(f);
+}
+
+// ── Desktop snapshot ──────────────────────────────────────────────────────
+// returns RGBA pixel buffer, caller frees. w/h set to screen size
+static unsigned char* captureDesktop(int* outW, int* outH) {
+    int W = GetSystemMetrics(SM_CXSCREEN);
+    int H = GetSystemMetrics(SM_CYSCREEN);
+    *outW = W; *outH = H;
+
+    HDC screenDC = GetDC(NULL);
+    HDC memDC    = CreateCompatibleDC(screenDC);
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth       = W;
+    bmi.bmiHeader.biHeight      = -H; // top-down
+    bmi.bmiHeader.biPlanes      = 1;
+    bmi.bmiHeader.biBitCount    = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(screenDC, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    HBITMAP old = (HBITMAP)SelectObject(memDC, bmp);
+    BitBlt(memDC, 0, 0, W, H, screenDC, 0, 0, SRCCOPY);
+    SelectObject(memDC, old);
+
+    // convert BGRA -> RGBA
+    unsigned char* pixels = (unsigned char*)malloc(W*H*4);
+    unsigned char* src2 = (unsigned char*)bits;
+    for(int i=0;i<W*H;i++){
+        pixels[i*4+0] = src2[i*4+2]; // R
+        pixels[i*4+1] = src2[i*4+1]; // G
+        pixels[i*4+2] = src2[i*4+0]; // B
+        pixels[i*4+3] = 255;
+    }
+
+    DeleteObject(bmp);
+    DeleteDC(memDC);
+    ReleaseDC(NULL, screenDC);
+    return pixels;
+}
+
+// simple box blur - radius in pixels, one-time cost on launch
+static void boxBlur(unsigned char* pixels, int W, int H, int radius) {
+    unsigned char* tmp = (unsigned char*)malloc(W*H*4);
+    // horizontal pass
+    for(int y=0;y<H;y++){
+        for(int x=0;x<W;x++){
+            int r=0,g=0,b=0,cnt=0;
+            for(int k=-radius;k<=radius;k++){
+                int nx=x+k; if(nx<0||nx>=W) continue;
+                int idx=(y*W+nx)*4;
+                r+=pixels[idx]; g+=pixels[idx+1]; b+=pixels[idx+2]; cnt++;
+            }
+            int idx=(y*W+x)*4;
+            tmp[idx]=r/cnt; tmp[idx+1]=g/cnt; tmp[idx+2]=b/cnt; tmp[idx+3]=255;
+        }
+    }
+    // vertical pass
+    for(int y=0;y<H;y++){
+        for(int x=0;x<W;x++){
+            int r=0,g=0,b=0,cnt=0;
+            for(int k=-radius;k<=radius;k++){
+                int ny=y+k; if(ny<0||ny>=H) continue;
+                int idx=(ny*W+x)*4;
+                r+=tmp[idx]; g+=tmp[idx+1]; b+=tmp[idx+2]; cnt++;
+            }
+            int idx=(y*W+x)*4;
+            pixels[idx]=r/cnt; pixels[idx+1]=g/cnt; pixels[idx+2]=b/cnt; pixels[idx+3]=255;
+        }
+    }
+    free(tmp);
 }
 
 // ── Win32 settings dialog ─────────────────────────────────────────────────
@@ -118,13 +196,12 @@ static void saveCfg() {
 #define IDC_FPS_240       121
 #define IDC_FPS_500       122
 #define IDC_COLOR_PREVIEW 123
+#define IDC_BG_SNAPSHOT   124
+#define IDC_BG_BLUR_SNAP  125
+#define IDC_NO_GROUND     126
 
 static bool g_preview_clicked = false;
 static COLORREF g_customColors[16] = {};
-
-static void updateColorPreview(HWND hwnd) {
-    InvalidateRect(GetDlgItem(hwnd,IDC_COLOR_PREVIEW),NULL,TRUE);
-}
 
 static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch(msg) {
@@ -136,15 +213,18 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             HWND c = CreateWindowA(cls,t,WS_CHILD|WS_VISIBLE|style,x,y,w,h,hwnd,(HMENU)(intptr_t)id,0,0);
             SendMessage(c,WM_SETFONT,(WPARAM)font,TRUE); return c;
         };
-        auto mkLabel  = [&](const char* t, int x,int y,int w,int h){ return mkCtrl("STATIC",t,0,0,x,y,w,h); };
-        auto mkBtn    = [&](const char* t, int id,int x,int y,int w,int h){ return mkCtrl("BUTTON",t,BS_PUSHBUTTON,id,x,y,w,h); };
-        auto mkRadio  = [&](const char* t, int id,int x,int y,int w,int h,bool first){
+        auto mkLabel = [&](const char* t,int x,int y,int w,int h){ return mkCtrl("STATIC",t,0,0,x,y,w,h); };
+        auto mkBtn   = [&](const char* t,int id,int x,int y,int w,int h){ return mkCtrl("BUTTON",t,BS_PUSHBUTTON,id,x,y,w,h); };
+        auto mkRadio = [&](const char* t,int id,int x,int y,int w,int h,bool first){
             return mkCtrl("BUTTON",t,BS_AUTORADIOBUTTON|(first?WS_GROUP:0),id,x,y,w,h);
         };
-        auto mkEdit   = [&](const char* t, int id,int x,int y,int w,int h){
+        auto mkCheck = [&](const char* t,int id,int x,int y,int w,int h){
+            return mkCtrl("BUTTON",t,BS_AUTOCHECKBOX,id,x,y,w,h);
+        };
+        auto mkEdit  = [&](const char* t,int id,int x,int y,int w,int h){
             return mkCtrl("EDIT",t,WS_BORDER|ES_AUTOHSCROLL,id,x,y,w,h);
         };
-        auto mkLink   = [&](const char* t, int id,int x,int y,int w,int h){
+        auto mkLink  = [&](const char* t,int id,int x,int y,int w,int h){
             return mkCtrl("BUTTON",t,BS_OWNERDRAW,id,x,y,w,h);
         };
 
@@ -162,16 +242,15 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         mkCtrl("STATIC",spdbuf,0,IDC_SPEED_LABEL,284,y+4,30,18); y+=30;
 
         // fps
-        mkLabel("FPS",10,y+3,40,18);
+        mkLabel("FPS",10,y+3,30,18);
         char fpsbuf[8]; sprintf(fpsbuf,"%d",g_settings.fps);
-        mkEdit(fpsbuf,IDC_FPS_EDIT,55,y,50,22);
-        // preset buttons
-        mkBtn("30", IDC_FPS_30, 112,y,32,22);
-        mkBtn("60", IDC_FPS_60, 148,y,32,22);
-        mkBtn("120",IDC_FPS_120,184,y,36,22);
-        mkBtn("144",IDC_FPS_144,224,y,36,22);
-        mkBtn("240",IDC_FPS_240,264,y,36,22);
-        mkBtn("500",IDC_FPS_500,304,y,36,22);
+        mkEdit(fpsbuf,IDC_FPS_EDIT,45,y,50,22);
+        mkBtn("30", IDC_FPS_30, 100,y,32,22);
+        mkBtn("60", IDC_FPS_60, 136,y,32,22);
+        mkBtn("120",IDC_FPS_120,172,y,36,22);
+        mkBtn("144",IDC_FPS_144,212,y,36,22);
+        mkBtn("240",IDC_FPS_240,252,y,36,22);
+        mkBtn("500",IDC_FPS_500,292,y,36,22);
         y+=30;
 
         // cube path
@@ -181,33 +260,40 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
 
         // background
         mkLabel("Background",10,y,80,18); y+=22;
-        mkRadio("Black",    IDC_BG_BLACK,20,y,60,18,true);
-        mkRadio("Color",    IDC_BG_COLOR,90,y,55,18,false);
-        // color preview box (owner-draw static)
+        mkRadio("Black",      IDC_BG_BLACK,    10,y,55,18,true);
+        mkRadio("Color",      IDC_BG_COLOR,    70,y,50,18,false);
         CreateWindowA("STATIC","",WS_CHILD|WS_VISIBLE|SS_OWNERDRAW,
-            150,y,24,18,hwnd,(HMENU)IDC_COLOR_PREVIEW,0,0);
-        mkBtn("Pick",IDC_COLOR_PICK,178,y,40,18);
-        mkRadio("Image",    IDC_BG_IMAGE,228,y,60,18,false);
-        y+=24;
+            125,y,20,16,hwnd,(HMENU)IDC_COLOR_PREVIEW,0,0);
+        mkBtn("Pick",IDC_COLOR_PICK,150,y,38,18);
+        mkRadio("Image",      IDC_BG_IMAGE,    195,y,52,18,false);
+        mkRadio("Transparent",IDC_BG_SNAPSHOT, 252,y,90,18,false);
+        y+=22;
+        mkRadio("Blur",       IDC_BG_BLUR_SNAP,10,y,45,18,false);
+        y+=4;
 
-        // image path (visible only when image selected, but always present)
-        mkEdit(g_settings.bg_image,IDC_IMG_EDIT,20,y,260,22);
-        mkBtn("...",IDC_IMG_BROWSE,284,y,30,22); y+=26;
+        // image path
+        mkEdit(g_settings.bg_image,IDC_IMG_EDIT,10,y,300,22);
+        mkBtn("...",IDC_IMG_BROWSE,316,y,30,22); y+=26;
 
         // fit mode
-        mkLabel("Fit:",20,y,25,18);
-        mkRadio("Stretch",IDC_FIT_STRETCH,50, y,65,18,true);
-        mkRadio("Zoom",   IDC_FIT_ZOOM,  120,y,50,18,false);
-        mkRadio("Tile",   IDC_FIT_TILE,  175,y,45,18,false);
+        mkLabel("Fit:",10,y,25,18);
+        mkRadio("Stretch",IDC_FIT_STRETCH,40, y,60,18,true);
+        mkRadio("Zoom",   IDC_FIT_ZOOM,  106,y,50,18,false);
+        mkRadio("Tile",   IDC_FIT_TILE,  162,y,45,18,false);
+        y+=26;
+
+        // no ground checkbox
+        HWND ng=mkCheck("No ground (infinite fall)",IDC_NO_GROUND,10,y,180,18);
+        if(g_settings.no_ground) SendMessage(ng,BM_SETCHECK,BST_CHECKED,0);
         y+=28;
 
         // check radios
-        int bgIds[]={IDC_BG_BLACK,IDC_BG_COLOR,IDC_BG_IMAGE};
+        int bgIds[]={IDC_BG_BLACK,IDC_BG_COLOR,IDC_BG_IMAGE,IDC_BG_SNAPSHOT,IDC_BG_BLUR_SNAP};
         CheckDlgButton(hwnd,bgIds[g_settings.bg_mode],BST_CHECKED);
         int fitIds[]={IDC_FIT_STRETCH,IDC_FIT_ZOOM,IDC_FIT_TILE};
         CheckDlgButton(hwnd,fitIds[g_settings.bg_fit],BST_CHECKED);
 
-        mkBtn("Save",   IDC_SAVE,   60,y,80,26);
+        mkBtn("Save",   IDC_SAVE,   50,y,80,26);
         mkBtn("Preview",IDC_PREVIEW,160,y,80,26); y+=36;
 
         // credits
@@ -218,8 +304,7 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         mkLabel("-",169,y,8,18);
         mkLink("github",203,179,y,50,18);
 
-        // resize window to fit content
-        SetWindowPos(hwnd,0,0,0,360,y+60,SWP_NOMOVE|SWP_NOZORDER);
+        SetWindowPos(hwnd,0,0,0,360,y+55,SWP_NOMOVE|SWP_NOZORDER);
         return 0;
     }
     case WM_CTLCOLORSTATIC: {
@@ -236,7 +321,6 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     }
     case WM_DRAWITEM: {
         DRAWITEMSTRUCT* di=(DRAWITEMSTRUCT*)lp;
-        // link buttons
         int id=di->CtlID;
         if(id==201||id==202||id==203){
             SetBkMode(di->hDC,TRANSPARENT);
@@ -262,7 +346,6 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     }
     case WM_COMMAND: {
         int id=LOWORD(wp);
-        // fps presets
         int fpsPresets[]={30,60,120,144,240,500};
         int fpsIds[]={IDC_FPS_30,IDC_FPS_60,IDC_FPS_120,IDC_FPS_144,IDC_FPS_240,IDC_FPS_500};
         for(int i=0;i<6;i++) if(id==fpsIds[i]){char b[8];sprintf(b,"%d",fpsPresets[i]);SetDlgItemTextA(hwnd,IDC_FPS_EDIT,b);}
@@ -289,25 +372,24 @@ static LRESULT CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             cc.Flags=CC_FULLOPEN|CC_RGBINIT;
             if(ChooseColorA(&cc)){
                 g_settings.bg_color=cc.rgbResult;
-                updateColorPreview(hwnd);
+                InvalidateRect(GetDlgItem(hwnd,IDC_COLOR_PREVIEW),NULL,TRUE);
             }
         }
         if(id==201) ShellExecuteA(hwnd,"open","https://malikhw.github.io",0,0,SW_SHOW);
         if(id==202) ShellExecuteA(hwnd,"open","https://youtube.com/@MalikHw47",0,0,SW_SHOW);
         if(id==203) ShellExecuteA(hwnd,"open","https://github.com/MalikHw",0,0,SW_SHOW);
-
         if(id==IDC_SAVE||id==IDC_PREVIEW){
             g_settings.speed=(int)SendDlgItemMessage(hwnd,IDC_SPEED_SLIDER,TBM_GETPOS,0,0);
-            char fpsbuf[16]; GetDlgItemTextA(hwnd,IDC_FPS_EDIT,fpsbuf,sizeof(fpsbuf));
-            int fpsval=atoi(fpsbuf); if(fpsval<1)fpsval=1; if(fpsval>500)fpsval=500;
-            g_settings.fps=fpsval;
+            char fpstmp[16]; GetDlgItemTextA(hwnd,IDC_FPS_EDIT,fpstmp,sizeof(fpstmp));
+            int fv=atoi(fpstmp); if(fv<1)fv=1; if(fv>500)fv=500; g_settings.fps=fv;
             char buf[512];
             GetDlgItemTextA(hwnd,IDC_CUBE_EDIT,buf,sizeof(buf)); strncpy(g_settings.cube_path,buf,511);
             GetDlgItemTextA(hwnd,IDC_IMG_EDIT,buf,sizeof(buf));  strncpy(g_settings.bg_image,buf,511);
-            int bgIds[]={IDC_BG_BLACK,IDC_BG_COLOR,IDC_BG_IMAGE};
-            for(int i=0;i<3;i++) if(IsDlgButtonChecked(hwnd,bgIds[i])) g_settings.bg_mode=i;
+            int bgIds[]={IDC_BG_BLACK,IDC_BG_COLOR,IDC_BG_IMAGE,IDC_BG_SNAPSHOT,IDC_BG_BLUR_SNAP};
+            for(int i=0;i<5;i++) if(IsDlgButtonChecked(hwnd,bgIds[i])) g_settings.bg_mode=i;
             int fitIds[]={IDC_FIT_STRETCH,IDC_FIT_ZOOM,IDC_FIT_TILE};
             for(int i=0;i<3;i++) if(IsDlgButtonChecked(hwnd,fitIds[i])) g_settings.bg_fit=i;
+            g_settings.no_ground=(IsDlgButtonChecked(hwnd,IDC_NO_GROUND)==BST_CHECKED);
             saveCfg();
             if(id==IDC_PREVIEW){g_preview_clicked=true;DestroyWindow(hwnd);}
             else MessageBoxA(hwnd,"Settings saved!","Orbit",MB_OK|MB_ICONINFORMATION);
@@ -329,13 +411,12 @@ static bool runWin32Settings() {
     RegisterClassA(&wc);
     HWND hwnd=CreateWindowA("OrbitSettings","Orbit Screensaver - Settings",
         WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,
-        CW_USEDEFAULT,CW_USEDEFAULT,360,400,0,0,0,0);
+        CW_USEDEFAULT,CW_USEDEFAULT,360,420,0,0,0,0);
     ShowWindow(hwnd,SW_SHOW); UpdateWindow(hwnd);
     MSG msg;
     while(GetMessage(&msg,0,0,0)){TranslateMessage(&msg);DispatchMessage(&msg);}
     return g_preview_clicked;
 }
-
 // ── Texture ───────────────────────────────────────────────────────────────
 struct Texture { GLuint id; int w,h; bool ok; };
 
@@ -352,6 +433,17 @@ static Texture loadTexture(const char* path) {
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
     t.w=conv->w; t.h=conv->h; t.ok=true;
     SDL_FreeSurface(conv);
+    return t;
+}
+
+static Texture loadTextureFromPixels(unsigned char* pixels, int w, int h) {
+    Texture t={0,0,0,false};
+    glGenTextures(1,&t.id);
+    glBindTexture(GL_TEXTURE_2D,t.id);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    t.w=w; t.h=h; t.ok=true;
     return t;
 }
 
@@ -376,7 +468,6 @@ static void drawBgImage(Texture& bg, int W, int H) {
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D,bg.id);
     glColor4f(1,1,1,1);
-
     if(g_settings.bg_fit==FIT_STRETCH) {
         glBegin(GL_QUADS);
         glTexCoord2f(0,0);glVertex2f(0,0);
@@ -385,7 +476,6 @@ static void drawBgImage(Texture& bg, int W, int H) {
         glTexCoord2f(0,1);glVertex2f(0,H);
         glEnd();
     } else if(g_settings.bg_fit==FIT_ZOOM) {
-        // scale to fill, crop edges
         float scaleX=(float)W/bg.w, scaleY=(float)H/bg.h;
         float scale=fmaxf(scaleX,scaleY);
         float dw=bg.w*scale, dh=bg.h*scale;
@@ -396,7 +486,7 @@ static void drawBgImage(Texture& bg, int W, int H) {
         glTexCoord2f(1,1);glVertex2f(ox+dw,oy+dh);
         glTexCoord2f(0,1);glVertex2f(ox,oy+dh);
         glEnd();
-    } else { // tile
+    } else {
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);
         float tx=(float)W/bg.w, ty=(float)H/bg.h;
@@ -437,21 +527,30 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
         RECT rc; GetClientRect(parentHwnd,&rc);
         W=rc.right-rc.left; if(W<=0)W=152;
         H=rc.bottom-rc.top; if(H<=0)H=112;
-        SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
-        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
-        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
-        win=SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_OPENGL);
     } else {
         SDL_DisplayMode dm; SDL_GetCurrentDisplayMode(0,&dm);
         W=dm.w; H=dm.h;
-        SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
-        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
-        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
+    }
+
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0);
+
+    if(isPreview){
+        win=SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_OPENGL);
+    } else {
         win=SDL_CreateWindow("orbit",0,0,W,H,SDL_WINDOW_OPENGL|SDL_WINDOW_FULLSCREEN_DESKTOP|SDL_WINDOW_BORDERLESS);
         SDL_ShowCursor(SDL_DISABLE);
     }
-
     if(!win){fprintf(stderr,"window failed\n");SDL_Quit();return;}
+
+    // take desktop snapshot BEFORE creating GL context covers the screen
+    Texture snapTex={0,0,0,false};
+    bool needSnap=!isPreview&&(g_settings.bg_mode==BG_SNAPSHOT||g_settings.bg_mode==BG_BLUR_SNAP);
+
     SDL_GLContext ctx=SDL_GL_CreateContext(win);
     SDL_GL_SetSwapInterval(1);
 
@@ -459,6 +558,16 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
     glOrtho(0,W,H,0,-1,1);
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
     glDisable(GL_DEPTH_TEST);
+
+    // load snapshot after GL context ready
+    if(needSnap){
+        int sw,sh;
+        unsigned char* pixels=captureDesktop(&sw,&sh);
+        if(g_settings.bg_mode==BG_BLUR_SNAP)
+            boxBlur(pixels,sw,sh,12); // radius 12 = nice soft blur, CPU one-time
+        snapTex=loadTextureFromPixels(pixels,sw,sh);
+        free(pixels);
+    }
 
     std::string assetDir=getAssetDir();
     Texture orbTex[NUM_ORBS];
@@ -468,28 +577,26 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
     }
     Texture cubeTex={0,0,0,false};
     {
-        const char* src=g_settings.cube_path[0]?g_settings.cube_path:nullptr;
-        if(!src){char p[600];snprintf(p,sizeof(p),"%s/cube.png",assetDir.c_str());cubeTex=loadTexture(p);}
-        else cubeTex=loadTexture(src);
+        const char* csrc=g_settings.cube_path[0]?g_settings.cube_path:nullptr;
+        if(!csrc){char p[600];snprintf(p,sizeof(p),"%s/cube.png",assetDir.c_str());cubeTex=loadTexture(p);}
+        else cubeTex=loadTexture(csrc);
     }
     Texture bgTex={0,0,0,false};
-    if(g_settings.bg_mode==BG_IMAGE && g_settings.bg_image[0])
+    if(g_settings.bg_mode==BG_IMAGE&&g_settings.bg_image[0])
         bgTex=loadTexture(g_settings.bg_image);
 
     srand((unsigned)time(nullptr));
-    bool running=true, firstSim=true;
+    bool running=true;
 
     while(running){
-        unsigned seed=(unsigned)rand(); srand(seed);
+        srand((unsigned)rand());
 
         int fps=g_settings.fps; if(fps<1)fps=1; if(fps>500)fps=500;
         float speedMult=g_settings.speed/10.0f;
 
-        // speedhack: scale gravity AND drop timing
         b2Vec2 gravity(0.0f, 9.8f*speedMult*3.0f);
         b2World world(gravity);
 
-        // drop_time scales inversely with speed: speed=20 -> dropTime=1, speed=1 -> dropTime=20
         int dropTime=(int)(20.0f/speedMult); if(dropTime<1)dropTime=1;
 
         auto makeWall=[&](float x1,float y1,float x2,float y2){
@@ -499,18 +606,22 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
             b2FixtureDef fd; fd.shape=&es; fd.restitution=0.5f; fd.friction=0.7f;
             b->CreateFixture(&fd); return b;
         };
-        b2Body* wallBottom=makeWall(0,H,W,H);
-        b2Body* wallLeft  =makeWall(0,0,0,H);
-        b2Body* wallRight =makeWall(W,0,W,H);
-        (void)wallLeft;(void)wallRight;
+
+        // side walls always exist
+        makeWall(0,0,0,H);
+        makeWall(W,0,W,H);
+
+        // bottom wall only if ground enabled
+        b2Body* wallBottom=nullptr;
+        if(!g_settings.no_ground)
+            wallBottom=makeWall(0,H,W,H);
 
         std::vector<Ball> balls;
         int globalTime=0;
-        bool fillingDone=false,draining=false;
+        bool fillingDone=false, draining=false;
 
         SDL_Point lastMouse; SDL_GetMouseState(&lastMouse.x,&lastMouse.y);
         int grace=60;
-
         Uint32 lastTick=SDL_GetTicks();
         float physAccum=0.0f;
         const float physStep=1.0f/fps;
@@ -527,7 +638,6 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
                     if(ev.type==SDL_MOUSEMOTION&&(ev.motion.x!=lastMouse.x||ev.motion.y!=lastMouse.y)){running=false;simRunning=false;}
                 }
             }
-            // die if preview parent closes
             if(isPreview&&parentHwnd&&!IsWindow(parentHwnd)){running=false;simRunning=false;}
 
             // spawn balls
@@ -557,14 +667,21 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
                 balls.push_back(ball);
             }
 
-            if(!fillingDone&&globalTime>NUM_BALLS*dropTime+200){
-                fillingDone=true;draining=true;
-                world.DestroyBody(wallBottom);
+            // drain logic - only when ground exists
+            if(!g_settings.no_ground){
+                if(!fillingDone&&globalTime>NUM_BALLS*dropTime+200){
+                    fillingDone=true; draining=true;
+                    if(wallBottom) world.DestroyBody(wallBottom);
+                }
+                if(draining){
+                    bool allOff=true;
+                    for(auto& b:balls) if(b.body->GetPosition().y*PPM<H+300){allOff=false;break;}
+                    if(allOff) simRunning=false;
+                }
             }
-            if(draining){
-                bool allOff=true;
-                for(auto& b:balls) if(b.body->GetPosition().y*PPM<H+300){allOff=false;break;}
-                if(allOff){simRunning=false;firstSim=false;}
+            // no_ground: balls fall forever, restart sim after a while
+            if(g_settings.no_ground&&globalTime>NUM_BALLS*dropTime+500){
+                simRunning=false;
             }
 
             // physics
@@ -574,21 +691,32 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
 
             // draw background
             int bm=g_settings.bg_mode;
-            if(bm==BG_IMAGE&&bgTex.ok){
-                glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
+            if((bm==BG_SNAPSHOT||bm==BG_BLUR_SNAP)&&snapTex.ok){
+                glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
+                // draw snapshot stretched to screen
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D,snapTex.id);
+                glColor4f(1,1,1,1);
+                glBegin(GL_QUADS);
+                glTexCoord2f(0,0);glVertex2f(0,0);
+                glTexCoord2f(1,0);glVertex2f(W,0);
+                glTexCoord2f(1,1);glVertex2f(W,H);
+                glTexCoord2f(0,1);glVertex2f(0,H);
+                glEnd();
+                glDisable(GL_TEXTURE_2D);
+            } else if(bm==BG_IMAGE&&bgTex.ok){
+                glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
                 drawBgImage(bgTex,W,H);
             } else if(bm==BG_COLOR){
                 float r=GetRValue(g_settings.bg_color)/255.0f;
                 float g2=GetGValue(g_settings.bg_color)/255.0f;
                 float b2=GetBValue(g_settings.bg_color)/255.0f;
-                glClearColor(r,g2,b2,1);glClear(GL_COLOR_BUFFER_BIT);
+                glClearColor(r,g2,b2,1); glClear(GL_COLOR_BUFFER_BIT);
             } else {
-                glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
+                glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
             }
 
-            // walls are invisible - physics only
-
-            // balls
+            // draw balls
             for(auto& b:balls){
                 float px=b.body->GetPosition().x*PPM;
                 float py=b.body->GetPosition().y*PPM;
@@ -611,8 +739,6 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
             }
 
             SDL_GL_SwapWindow(win);
-
-            // frame cap (vsync handles it but just in case)
             Uint32 elapsed=SDL_GetTicks()-now;
             Uint32 target=1000/fps;
             if(elapsed<target) SDL_Delay(target-elapsed);
@@ -623,24 +749,24 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
     for(int i=0;i<NUM_ORBS;i++) if(orbTex[i].ok)glDeleteTextures(1,&orbTex[i].id);
     if(cubeTex.ok)glDeleteTextures(1,&cubeTex.id);
     if(bgTex.ok)glDeleteTextures(1,&bgTex.id);
+    if(snapTex.ok)glDeleteTextures(1,&snapTex.id);
     SDL_GL_DeleteContext(ctx);
     SDL_DestroyWindow(win);
-    IMG_Quit();SDL_Quit();
+    IMG_Quit(); SDL_Quit();
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────
-int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR cmdLine,int){
+int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
     timeBeginPeriod(1);
     loadCfg();
 
-    // parse args
     int argc; LPWSTR* wargv=CommandLineToArgvW(GetCommandLineW(),&argc);
-    bool doConfig=false,doPreview=false,doRun=false;
+    bool doConfig=false,doPreview=false;
     HWND previewHwnd=nullptr;
     for(int i=1;i<argc;i++){
         char a[64]; WideCharToMultiByte(CP_ACP,0,wargv[i],-1,a,sizeof(a),0,0);
         for(char* p=a;*p;p++) *p=tolower(*p);
-        if(!strcmp(a,"/s")||!strcmp(a,"-s")) doRun=true;
+        if(!strcmp(a,"/s")||!strcmp(a,"-s")) {}
         else if(!strncmp(a,"/c",2)||!strncmp(a,"-c",2)) doConfig=true;
         else if(!strcmp(a,"/p")||!strcmp(a,"-p")){
             doPreview=true;
