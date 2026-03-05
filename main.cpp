@@ -1,3 +1,5 @@
+// main2.cpp - Dear ImGui settings UI version
+// Requires: imgui + imgui_impl_sdl2 + imgui_impl_opengl2 in extern/imgui/
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <SDL2/SDL_image.h>
@@ -226,9 +228,10 @@ static bool runImGuiSettings() {
     ImGui::CreateContext();
     ImGuiIO& io=ImGui::GetIO();
     io.IniFilename=nullptr;
-    // load Segoe UI from system
-    io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.0f);
-    if(io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault(); // fallback
+    // load Segoe UI, fallback to Courier New (monospace), then imgui default
+    if(!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.0f))
+        if(!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\cour.ttf", 16.0f))
+            io.Fonts->AddFontDefault();
 
     // Dark theme with some colour
     ImGui::StyleColorsDark();
@@ -351,10 +354,19 @@ static bool runImGuiSettings() {
         ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1.0f),"by MalikHw47");
         ImGui::Spacing();
+        if(ImGui::SmallButton("MalikHw47")) ShellExecuteA(0,"open","https://malikhw.github.io",0,0,SW_SHOW);
+        ImGui::SameLine(); ImGui::Text("-"); ImGui::SameLine();
+        if(ImGui::SmallButton("youtube"))   ShellExecuteA(0,"open","https://youtube.com/@MalikHw47",0,0,SW_SHOW);
+        ImGui::SameLine(); ImGui::Text("-"); ImGui::SameLine();
+        if(ImGui::SmallButton("github"))    ShellExecuteA(0,"open","https://github.com/MalikHw",0,0,SW_SHOW);
+        ImGui::SameLine(); ImGui::Text("-"); ImGui::SameLine();
+        if(ImGui::SmallButton("twitch"))    ShellExecuteA(0,"open","https://twitch.tv/MalikHw47",0,0,SW_SHOW);
+        ImGui::Spacing();
         if(ImGui::Button("Join my server",ImVec2(180,22)))   ShellExecuteA(0,"open","https://discord.gg/G9bZ92eg2n",0,0,SW_SHOW);
         ImGui::SameLine();
         if(ImGui::Button("Get me a gift!",ImVec2(150,22)))   ShellExecuteA(0,"open","https://throne.com/MalikHw47",0,0,SW_SHOW);
         if(ImGui::Button("Get me MegaHack!",ImVec2(180,22))) ShellExecuteA(0,"open","https://absolllute.com/store/mega_hack?gift=1",0,0,SW_SHOW);
+        if(ImGui::IsItemHovered()) ImGui::SetTooltip("My discord is MalikHw btw");
         ImGui::SameLine();
         if(ImGui::Button("Donate!",ImVec2(150,22)))           ShellExecuteA(0,"open","https://ko-fi.com/malikhw47",0,0,SW_SHOW);
 
