@@ -9,29 +9,9 @@ RequestExecutionLevel user
 Var MesaAnswer
 
 !define MUI_ABORTWARNING
-
-Page custom MesaPage MesaPageLeave
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
-Function MesaPage
-    nsDialogs::Create 1044
-    Pop $0
-    ${NSD_CreateLabel} 0 0 100% 40u "Is your PC a potato? (No dedicated GPU / very old integrated graphics)"
-    Pop $0
-    ${NSD_CreateLabel} 0 44u 100% 30u "Mesa3D adds software OpenGL - slower but works on anything."
-    Pop $0
-    nsDialogs::Show
-FunctionEnd
-
-Function MesaPageLeave
-    IfFileExists "$EXEDIR\opengl32.dll" +2 0
-        Return
-    MessageBox MB_YESNO|MB_ICONQUESTION "Include Mesa3D software renderer?$\n(Only needed if you get a black screen or missing graphics)" IDYES DoInclude IDNO Done
-    DoInclude:
-        StrCpy $MesaAnswer "yes"
-    Done:
-FunctionEnd
 
 Section "Install"
     ; ask about mesa3d
@@ -68,7 +48,6 @@ Section "Install"
         ${EndIf}
     ${EndIf}
 
-    ; open install folder and tell user to right-click install the .scr
     MessageBox MB_OK|MB_ICONINFORMATION "Installation complete!$\n$\nThe install folder will now open.$\nRight-click 'orbit_screensaver.scr' and click 'Install' to set it as your screensaver."
     Exec 'explorer.exe "$PROFILE\orbit"'
 SectionEnd
