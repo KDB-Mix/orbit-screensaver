@@ -66,7 +66,7 @@ static Settings g_settings = {
     false, 1.0f, 120, true, false
 };
 
-// Miku─ Paths ──────
+// Miku─ Paths
 static std::string getExeDir() {
     char buf[MAX_PATH]; GetModuleFileNameA(NULL,buf,MAX_PATH);
     std::string s(buf); return s.substr(0,s.rfind('\\'));
@@ -75,7 +75,7 @@ static std::string getCfgPath() {
     return getExeDir()+"\\settings.ini";
 }
 
-// Miku─ Config ─────
+// Miku─ Config
 static void loadCfg() {
     FILE* f=fopen(getCfgPath().c_str(),"r"); if(!f)return;
     char line[640];
