@@ -4,6 +4,7 @@
 #include <shlobj.h>
 #include <stdio.h>
 #include <string.h>
+#include <tlhelp32.h>
 #include <string>
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "shell32.lib")
