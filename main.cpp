@@ -66,7 +66,7 @@ static Settings g_settings = {
     false, 1.0f, 120, true, false
 };
 
-// ── Paths ─────────────────────────────────────────────────────────────────
+// Miku─ Paths ──────
 static std::string getExeDir() {
     char buf[MAX_PATH]; GetModuleFileNameA(NULL,buf,MAX_PATH);
     std::string s(buf); return s.substr(0,s.rfind('\\'));
@@ -75,7 +75,7 @@ static std::string getCfgPath() {
     return getExeDir()+"\\settings.ini";
 }
 
-// ── Config ────────────────────────────────────────────────────────────────
+// Miku─ Config ─────
 static void loadCfg() {
     FILE* f=fopen(getCfgPath().c_str(),"r"); if(!f)return;
     char line[640];
@@ -200,7 +200,7 @@ static void boxBlur(unsigned char* pixels, int W, int H, int radius) {
     free(tmp);
 }
 
-// ── Texture ───────────────────────────────────────────────────────────────
+// Miku─ Texture ────
 struct Texture { GLuint id; int w,h; bool ok; };
 static Texture loadTexture(const char* path) {
     Texture t={0,0,0,false};
@@ -255,7 +255,7 @@ static void drawCircleFallback(float cx,float cy,float r){
 
 struct Ball { b2Body* body; float radius; int orbIdx; bool isPlayer; };
 
-// ── ImGui MegaHack-ahh ────────────────────────────────────────────────────────
+// Miku─ ImGui MegaHack-ahh
 static bool g_preview_clicked = false;
 
 static bool runImGuiSettings() {
@@ -452,7 +452,7 @@ static bool runImGuiSettings() {
     return g_preview_clicked;
 }
 
-// ── Screensaver loop ──────────────────────────────────────────────────────
+// Miku─ Screensaver loop
 static void runScreensaver(bool isPreview, void* previewHandle) {
     HWND parentHwnd=(HWND)previewHandle;
     if(isPreview&&parentHwnd){
@@ -527,8 +527,9 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
 
         std::vector<Ball> balls;
         int globalTime=0;bool fillingDone=false,draining=false;
-        int nextSpawn=0; // index of next orb to spawn
+        int nextSpawn=0;
         bool playerSpawned=false;
+        Uint32 allSpawnedAt=0;
         SDL_Point lastMouse;SDL_GetMouseState(&lastMouse.x,&lastMouse.y);
         int grace=60;
         Uint32 lastTick=SDL_GetTicks();float physAccum=0;const float physStep=1.0f/fps;
@@ -546,8 +547,8 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
             }
             if(isPreview&&parentHwnd&&!IsWindow(parentHwnd)){running=false;simRunning=false;}
 
-            // spawn queue: use >= so no orb is ever skipped due to missed ticks
-            // nextSpawn=0 fires on frame 1 (globalTime>=0 is always true), fixing off-by-one
+
+            
             while(nextSpawn < numBalls && globalTime >= dropTime * nextSpawn){
                 float radius=(40+rand()%20)*g_settings.orb_scale;
                 b2BodyDef bd;bd.type=b2_dynamicBody;
@@ -561,7 +562,7 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
                 balls.push_back(ball);
                 nextSpawn++;
             }
-            // player cube spawns after all orbs are queued
+
             if(!playerSpawned && nextSpawn >= numBalls){
                 b2BodyDef bd;bd.type=b2_dynamicBody;bd.position.Set((float)W*0.5f/PPM,-400.0f/PPM);
                 b2Body* body=world.CreateBody(&bd);
@@ -573,11 +574,15 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
                 playerSpawned=true;
             }
 
-            // destroy ground once ALL orbs have spawned (exact count, player excluded)
+            // destroy ground once ALL orbs have spawned, after a 5-6s delay so users wont cry
             if(!g_settings.no_ground&&!fillingDone && nextSpawn>=numBalls){
-                fillingDone=true;
-                draining=true;
-                if(wallBottom){ world.DestroyBody(wallBottom); wallBottom=nullptr; }
+                if(allSpawnedAt==0) allSpawnedAt=SDL_GetTicks();
+                Uint32 delay=5000+(rand()%1001);
+                if(SDL_GetTicks()-allSpawnedAt >= delay){
+                    fillingDone=true;
+                    draining=true;
+                    if(wallBottom){ world.DestroyBody(wallBottom); wallBottom=nullptr; }
+                }
             }
             if(!g_settings.no_ground&&draining){
                 bool allOff=true;
@@ -635,7 +640,7 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
     IMG_Quit();SDL_Quit();
 }
 
-// ── Entry point ───────────────────────────────────────────────────────────
+// Miku─ Entry point 
 int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
     timeBeginPeriod(1);
     loadCfg();
