@@ -568,15 +568,22 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
                 balls.push_back(ball);
             }
 
+            // NEW - triggers once all orbs (excluding player) have spawned
             if(!g_settings.no_ground&&!fillingDone){
-                int spawned=0,resting=0;
-                for(auto& b:balls){spawned++;float py=b.body->GetPosition().y*PPM,vy=b.body->GetLinearVelocity().y;if(py>H*0.5f&&fabsf(vy)<2.0f)resting++;}
-                if(spawned>=(int)(numBalls*0.9f)&&resting>=(int)(spawned*0.8f)){
-                    fillingDone=true;draining=true;if(wallBottom)world.DestroyBody(wallBottom);
+                // count only orb balls, not the player cube
+                int orbSpawned=0;
+                for(auto& b:balls) if(!b.isPlayer) orbSpawned++;
+                if(orbSpawned>=numBalls){
+                    fillingDone=true;
+                    draining=true;
+                    if(wallBottom){ world.DestroyBody(wallBottom); wallBottom=nullptr; }
                 }
             }
             if(!g_settings.no_ground&&draining){
-                bool allOff=true;for(auto& b:balls)if(b.body->GetPosition().y*PPM<H+300){allOff=false;break;}if(allOff)simRunning=false;
+                bool allOff=true;
+                for(auto& b:balls)
+                    if(b.body->GetPosition().y*PPM < H+300){ allOff=false; break; }
+                if(allOff) simRunning=false;
             }
             if(g_settings.no_ground&&globalTime>numBalls*dropTime+500)simRunning=false;
 
