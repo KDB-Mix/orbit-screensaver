@@ -4,7 +4,7 @@
 Name "Orbit Screensaver"
 OutFile "orbit-setup.exe"
 InstallDir "$PROFILE\orbit"
-RequestExecutionLevel admin
+RequestExecutionLevel user
 
 Var MesaAnswer
 
