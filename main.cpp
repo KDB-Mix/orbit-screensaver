@@ -273,6 +273,10 @@ static void downloadMesa3D() {
 
     retry:
     HINTERNET hSession=WinHttpOpen(L"OrbitUpdater/1.0",WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);
+    if(hSession){
+        DWORD rp=WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+        WinHttpSetOption(hSession,WINHTTP_OPTION_REDIRECT_POLICY,&rp,sizeof(rp));
+    }
     HINTERNET hConnect=hSession?WinHttpConnect(hSession,whost,INTERNET_DEFAULT_HTTPS_PORT,0):nullptr;
     HINTERNET hRequest=hConnect?WinHttpOpenRequest(hConnect,L"GET",wpath,NULL,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE):nullptr;
     bool ok=false;
@@ -481,7 +485,7 @@ static bool runImGuiSettings() {
 
         if(ImGui::Button("Save",ImVec2(100,30))){saveCfg();ImGui::OpenPopup("Saved");}
         ImGui::SameLine();
-        if(ImGui::Button("Preview",ImVec2(100,30))){saveCfg();g_preview_clicked=true;running=false;}
+        if(ImGui::Button("Save and Exit",ImVec2(120,30))){saveCfg();g_preview_clicked=false;running=false;}
         if(ImGui::BeginPopupModal("Saved",nullptr,ImGuiWindowFlags_AlwaysAutoResize)){
             ImGui::Text("Settings saved!");
             if(ImGui::Button("OK")) ImGui::CloseCurrentPopup();
@@ -511,7 +515,7 @@ static bool runImGuiSettings() {
         if(ImGui::Button("Donate!",ImVec2(150,22)))           ShellExecuteA(0,"open","https://ko-fi.com/malikhw47",0,0,SW_SHOW);
 
         if(logoTex){
-            const float logoSize=40.0f;
+            const float logoSize=56.0f;
             ImVec2 winPos=ImGui::GetWindowPos();
             ImVec2 winSize=ImGui::GetWindowSize();
             ImVec2 logoPos=ImVec2(winPos.x+winSize.x-logoSize-6, winPos.y+winSize.y-logoSize-6);
