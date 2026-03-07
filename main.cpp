@@ -17,10 +17,12 @@
 #include <commdlg.h>
 #include <timeapi.h>
 #include <winhttp.h>
+#include <urlmon.h>
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "winhttp.lib")
+#pragma comment(lib, "urlmon.lib")
 #include <SDL2/SDL_syswm.h>
 
 #include "imgui.h"
@@ -261,40 +263,8 @@ static void downloadMesa3D() {
         "Install Mesa3D", MB_OKCANCEL | MB_ICONINFORMATION);
     if(res != IDOK) return;
 
-    const char* host_start = url + 8;
-    const char* path_start = strchr(host_start, '/');
-    if(!path_start) { MessageBoxA(NULL,"Invalid URL.","Error",MB_OK|MB_ICONERROR); return; }
-
-    std::string host(host_start, path_start - host_start);
-    std::string path(path_start);
-    wchar_t whost[256], wpath[512];
-    MultiByteToWideChar(CP_ACP,0,host.c_str(),-1,whost,256);
-    MultiByteToWideChar(CP_ACP,0,path.c_str(),-1,wpath,512);
-
     retry:
-    HINTERNET hSession=WinHttpOpen(L"OrbitUpdater/1.0",WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);
-    if(hSession){
-        DWORD rp=WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-        WinHttpSetOption(hSession,WINHTTP_OPTION_REDIRECT_POLICY,&rp,sizeof(rp));
-    }
-    HINTERNET hConnect=hSession?WinHttpConnect(hSession,whost,INTERNET_DEFAULT_HTTPS_PORT,0):nullptr;
-    HINTERNET hRequest=hConnect?WinHttpOpenRequest(hConnect,L"GET",wpath,NULL,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE):nullptr;
-    bool ok=false;
-    if(hRequest){
-        WinHttpAddRequestHeaders(hRequest,L"User-Agent: OrbitUpdater",-1,WINHTTP_ADDREQ_FLAG_ADD);
-        if(WinHttpSendRequest(hRequest,WINHTTP_NO_ADDITIONAL_HEADERS,0,WINHTTP_NO_REQUEST_DATA,0,0,0)
-           && WinHttpReceiveResponse(hRequest,NULL)){
-            FILE* f=fopen(destPath.c_str(),"wb");
-            if(f){
-                char buf[8192]; DWORD read=0;
-                while(WinHttpReadData(hRequest,buf,sizeof(buf),&read)&&read>0) fwrite(buf,1,read,f);
-                fclose(f); ok=true;
-            }
-        }
-    }
-    if(hRequest) WinHttpCloseHandle(hRequest);
-    if(hConnect) WinHttpCloseHandle(hConnect);
-    if(hSession) WinHttpCloseHandle(hSession);
+    bool ok=(URLDownloadToFileA(NULL,url,destPath.c_str(),0,NULL)==S_OK);
 
     if(!ok){
         int retry=MessageBoxA(NULL,
