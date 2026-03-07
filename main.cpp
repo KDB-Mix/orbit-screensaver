@@ -747,6 +747,7 @@ static void runScreensaver(bool isPreview, void* previewHandle) {
 }
 
 int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
+    MessageBoxA(NULL, GetCommandLineA(), "args", MB_OK); // temp debug
     timeBeginPeriod(1);
     loadCfg();
 
