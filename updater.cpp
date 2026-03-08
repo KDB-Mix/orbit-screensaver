@@ -87,10 +87,7 @@ static std::string fetchLatestTag() {
 int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
     std::string exeDir=getExeDir();
 
-    MessageBoxA(NULL,
-        "Orbit Updater\n\nWaiting for screensaver to close, then updating...\n\nThis window will close automatically.",
-        "Orbit Updater",MB_OK|MB_ICONINFORMATION);
-
+    // wait for screensaver to close
     for(int i=0;i<60;i++){
         HANDLE snap=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
         bool found=false;
@@ -108,29 +105,51 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
         Sleep(500);
     }
 
-    std::string tag=fetchLatestTag();
-    if(tag.empty()){
-        MessageBoxA(NULL,"Failed to fetch latest version info.\nCheck your internet connection.","Orbit Updater",MB_OK|MB_ICONERROR);
-        return 1;
-    }
-
-    std::string zipUrl="https://github.com/MalikHw/orbit-screensaver/releases/download/"+tag+"/orbit-update.zip";
+    // zip was already downloaded by main.cpp settings UI
     std::string zipPath=exeDir+"\\orbit-update.zip";
 
-    if(!downloadFile(zipUrl.c_str(),zipPath.c_str())){
-        MessageBoxA(NULL,"Failed to download update.\nCheck your internet connection.","Orbit Updater",MB_OK|MB_ICONERROR);
-        return 1;
+    // fallback: if zip not there, download it ourselves
+    if(GetFileAttributesA(zipPath.c_str())==INVALID_FILE_ATTRIBUTES){
+        std::string tag=fetchLatestTag();
+        if(tag.empty()){
+            MessageBoxA(NULL,"Failed to fetch latest version info.\nCheck your internet connection.","Orbit Updater",MB_OK|MB_ICONERROR);
+            return 1;
+        }
+        std::string zipUrl="https://github.com/MalikHw/orbit-screensaver/releases/download/"+tag+"/orbit-update.zip";
+        if(!downloadFile(zipUrl.c_str(),zipPath.c_str())){
+            MessageBoxA(NULL,"Failed to download update.\nCheck your internet connection.","Orbit Updater",MB_OK|MB_ICONERROR);
+            return 1;
+        }
     }
 
-    if(!extractZip(zipPath.c_str(),exeDir.c_str())){
+    // extract to temp folder
+    std::string tmpDir=exeDir+"\\orbit-update-tmp";
+    CreateDirectoryA(tmpDir.c_str(),NULL);
+
+    if(!extractZip(zipPath.c_str(),tmpDir.c_str())){
         MessageBoxA(NULL,"Failed to extract update.","Orbit Updater",MB_OK|MB_ICONERROR);
         return 1;
     }
-
     DeleteFileA(zipPath.c_str());
 
-    MessageBoxA(NULL,"Update installed successfully!\n\nReinstall the screensaver by right-clicking orbit_screensaver.scr -> Install.",
-        "Orbit Updater",MB_OK|MB_ICONINFORMATION);
+    // copy files to install dir; updater.exe -> updater.exe.pending
+    WIN32_FIND_DATAA fd;
+    std::string pattern=tmpDir+"\\*";
+    HANDLE hFind=FindFirstFileA(pattern.c_str(),&fd);
+    if(hFind!=INVALID_HANDLE_VALUE){
+        do {
+            if(fd.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY) continue;
+            std::string src=tmpDir+"\\"+fd.cFileName;
+            std::string dst;
+            if(_stricmp(fd.cFileName,"updater.exe")==0)
+                dst=exeDir+"\\updater.exe.pending";
+            else
+                dst=exeDir+"\\"+fd.cFileName;
+            MoveFileExA(src.c_str(),dst.c_str(),MOVEFILE_REPLACE_EXISTING);
+        } while(FindNextFileA(hFind,&fd));
+        FindClose(hFind);
+    }
+    RemoveDirectoryA(tmpDir.c_str());
 
-    return 0;
+    return 0; // silent, no messagebox
 }
