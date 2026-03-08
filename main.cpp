@@ -59,7 +59,7 @@ struct Settings {
     bool  no_ground;
     float orb_scale;
     int   orb_count;
-    bool  auto_update_check; // kept for ini compat, ignored
+    bool  auto_update_check;
     bool  auto_update_install;
     int   cube_chance;
 };
@@ -181,7 +181,15 @@ static DWORD WINAPI updateDownloadThread(void* param){
     return 0;
 }
 static UpdateDownloadState* g_updateDL=nullptr;
-static std::string g_updateTag="";
+
+struct TagCheckState { volatile int done; char tag[64]; };
+static TagCheckState g_tagCheck={0,""};
+static DWORD WINAPI tagCheckThread(void*){
+    std::string t=fetchLatestTag();
+    strncpy((char*)g_tagCheck.tag,t.c_str(),63);
+    g_tagCheck.done=1;
+    return 0;
+}
 
 static unsigned char* captureDesktop(int* outW, int* outH) {
     int W=GetSystemMetrics(SM_CXSCREEN), H=GetSystemMetrics(SM_CYSCREEN);
@@ -368,23 +376,10 @@ static bool runImGuiSettings() {
 
     static std::string latestTag="";
     static bool updateChecked=false;
-
     if(!updateChecked){
-        // kick off check on background thread so UI doesn't freeze
-        struct { volatile bool done; std::string tag; } static checkState={false,""};
-        if(!checkState.done){
-            static bool checkStarted=false;
-            if(!checkStarted){
-                checkStarted=true;
-                CreateThread(NULL,0,[](void* p) -> DWORD {
-                    auto* cs=(decltype(&checkState))p;
-                    cs->tag=fetchLatestTag();
-                    cs->done=true;
-                    return 0;
-                },&checkState,0,NULL);
-            }
-        }
-        if(checkState.done){ latestTag=checkState.tag; updateChecked=true; }
+        static bool checkStarted=false;
+        if(!checkStarted){ checkStarted=true; CreateThread(NULL,0,tagCheckThread,NULL,0,NULL); }
+        if(g_tagCheck.done){ latestTag=std::string(g_tagCheck.tag); updateChecked=true; }
     }
 
     bool running=true;
@@ -437,7 +432,7 @@ static bool runImGuiSettings() {
         if(broPopupPending){ ImGui::OpenPopup("bro"); broPopupPending=false; }
 
         if(ImGui::BeginPopupModal("bro",nullptr,ImGuiWindowFlags_AlwaysAutoResize)){
-            ImGui::Text("bro what the fuck? :sob:, why is even THAT!?");
+            ImGui::Text("bro what the fuck? :sob:, how is even THAT!?");
             if(ImGui::Button("yes")) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
@@ -496,7 +491,8 @@ static bool runImGuiSettings() {
             ImGui::ProgressBar(g_updateDL->progress,ImVec2(220,20),lbl);
             ImGui::SameLine(); ImGui::TextColored(ImVec4(1,1,0,1),"Downloading update...");
         } else if(g_updateDL && g_updateDL->done==1){
-            ImGui::TextColored(ImVec4(0,1,0,1),"Downloaded! Applying...");
+            ImGui::TextColored(ImVec4(0,1,0,1),"Downloaded! Launching updater...");
+            saveCfg(); launchUpdater(); running=false;
         } else if(g_updateDL && g_updateDL->done==-1){
             ImGui::TextColored(ImVec4(1,0.3f,0.3f,1),"Download failed!");
         } else {
@@ -516,11 +512,6 @@ static bool runImGuiSettings() {
                     CreateThread(NULL,0,updateDownloadThread,g_updateDL,0,NULL);
                 }
             }
-        }
-        if(g_updateDL && g_updateDL->done==1){
-            saveCfg();
-            launchUpdater();
-            running=false;
         }
         ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
 
@@ -549,8 +540,8 @@ static bool runImGuiSettings() {
             if(ImGui::IsItemHovered()) ImGui::SetTooltip("Software OpenGL renderer - only if you get a white square!");
         }
         if(ImGui::BeginPopupModal("mesa_confirm",nullptr,ImGuiWindowFlags_AlwaysAutoResize)){
-            ImGui::TextColored(ImVec4(1,0.8f,0,1),"Please Only Use when showing white square instead,");
-            ImGui::Text("and/or you don't want GPU usage.");
+            ImGui::TextColored(ImVec4(1,0.8f,0,1),"Only use this if you get a white square,");
+            ImGui::Text("or you don't want GPU usage.");
             ImGui::Spacing();
             if(ImGui::Button("Download",ImVec2(100,24))){ startMesaDownload(); ImGui::CloseCurrentPopup(); }
             ImGui::SameLine();
@@ -797,7 +788,7 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
     timeBeginPeriod(1);
     loadCfg();
 
-    // swap pending updater if exists
+    // swap pending updater if exists (installed by previous update)
     {
         std::string exeDir=getExeDir();
         std::string pending=exeDir+"\\updater.exe.pending";
