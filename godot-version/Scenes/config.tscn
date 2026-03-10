@@ -1,0 +1,121 @@
+[gd_scene format=3 uid="uid://c0muf7t7optau"]
+
+[ext_resource type="Script" uid="uid://c0lxxn82liwbd" path="res://Scripts/config.gd" id="1_kr0as"]
+
+[node name="Config" type="Control" unique_id=1466177351]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_kr0as")
+
+[node name="applyButton" type="Button" parent="." unique_id=401047361]
+layout_mode = 0
+offset_left = 504.0
+offset_top = 538.0
+offset_right = 605.0
+offset_bottom = 615.0
+text = "apply"
+
+[node name="ball count" type="HSlider" parent="." unique_id=1572783485]
+layout_mode = 0
+offset_left = 207.0
+offset_top = 127.0
+offset_right = 435.0
+offset_bottom = 143.0
+min_value = 60.0
+max_value = 240.0
+value = 120.0
+rounded = true
+tick_count = 3
+ticks_on_borders = true
+
+[node name="fps" type="HSlider" parent="." unique_id=198299272]
+layout_mode = 0
+offset_left = 763.0
+offset_top = 135.0
+offset_right = 991.0
+offset_bottom = 151.0
+min_value = 30.0
+max_value = 360.0
+value = 30.0
+rounded = true
+tick_count = 12
+ticks_on_borders = true
+
+[node name="fpscount" type="SpinBox" parent="." unique_id=2123354646]
+layout_mode = 0
+offset_left = 678.0
+offset_top = 126.0
+offset_right = 764.5
+offset_bottom = 157.0
+min_value = 30.0
+max_value = 360.0
+value = 30.0
+
+[node name="ball count count" type="SpinBox" parent="." unique_id=2104954339]
+layout_mode = 0
+offset_left = 114.0
+offset_top = 121.0
+offset_right = 200.5
+offset_bottom = 152.0
+min_value = 60.0
+max_value = 240.0
+value = 120.0
+
+[node name="fps label" type="Label" parent="." unique_id=676556775]
+layout_mode = 0
+offset_left = 772.0
+offset_top = 85.0
+offset_right = 812.0
+offset_bottom = 108.0
+text = "FPS"
+
+[node name="ball count label" type="Label" parent="." unique_id=1421184161]
+layout_mode = 0
+offset_left = 222.0
+offset_top = 88.0
+offset_right = 300.0
+offset_bottom = 111.0
+text = "Ball count"
+
+[node name="trans bd label" type="Label" parent="." unique_id=1813643757]
+layout_mode = 0
+offset_left = 677.0
+offset_top = 243.0
+offset_right = 800.0
+offset_bottom = 266.0
+text = "Transparent BG:"
+
+[node name="bg color label" type="Label" parent="." unique_id=15493504]
+layout_mode = 0
+offset_left = 222.0
+offset_top = 215.0
+offset_right = 300.0
+offset_bottom = 238.0
+text = "BG color"
+
+[node name="transparentBG" type="CheckBox" parent="." unique_id=793849305]
+layout_mode = 0
+offset_left = 809.0
+offset_top = 242.0
+offset_right = 833.0
+offset_bottom = 266.0
+
+[node name="bgColor" type="ColorPicker" parent="." unique_id=25755769]
+layout_mode = 0
+offset_left = 120.0
+offset_top = 247.0
+offset_right = 418.0
+offset_bottom = 574.0
+edit_alpha = false
+edit_intensity = false
+color_modes_visible = false
+sliders_visible = false
+presets_visible = false
+
+[connection signal="button_down" from="applyButton" to="." method="_on_apply_button_button_down"]
+[connection signal="value_changed" from="fpscount" to="." method="_on_fpscount_value_changed"]
+[connection signal="value_changed" from="ball count count" to="." method="_on_ball_count_count_value_changed"]

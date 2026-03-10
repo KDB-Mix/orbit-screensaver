@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://btcqddgbbd7ns"]
+
+[ext_resource type="Script" uid="uid://dfahrs3io6nmm" path="res://Scripts/screensaver.gd" id="1_voogc"]
+
+[node name="Screensaver" type="Node2D" unique_id=667446424]
+script = ExtResource("1_voogc")
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=896231365]
+offset_right = 40.0
+offset_bottom = 40.0

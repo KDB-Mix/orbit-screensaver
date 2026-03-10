@@ -10,9 +10,25 @@ config_version=5
 
 [application]
 
-config/name="Godot version"
+config/name="Orbit Screensaver"
+run/main_scene="uid://cnygno47jx4ec"
 config/features=PackedStringArray("4.6", "GL Compatibility")
+boot_splash/show_image=false
+boot_splash/use_filter=false
 config/icon="res://icon.svg"
+
+[autoload]
+
+ConfigSave="*uid://bihndaqw7tx53"
+
+[display]
+
+window/size/transparent=true
+window/per_pixel_transparency/allowed=true
+
+[editor]
+
+run/main_run_args="-s"
 
 [physics]
 
