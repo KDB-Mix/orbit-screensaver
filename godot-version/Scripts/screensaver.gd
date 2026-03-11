@@ -13,9 +13,20 @@ var orbcount = ConfigSave.settings["ballCount"]
 #var orbcount = 10
 var windowsize: Vector2i
 var showPlayer: bool
-var orbpics: Array
 var img: Resource
 var playerIndex: int
+var orbpics = [
+	"res://orbs/orb1.png",
+	"res://orbs/orb2.png",
+	"res://orbs/orb3.png",
+	"res://orbs/orb4.png",
+	"res://orbs/orb5.png",
+	"res://orbs/orb6.png",
+	"res://orbs/orb7.png",
+	"res://orbs/orb8.png",
+	"res://orbs/orb9.png",
+    "res://orbs/orb10.png"
+]
 
 # Called when the node enters the scene tree for the first time.
 func _ready() -> void:
@@ -32,9 +43,6 @@ func _ready() -> void:
 	showPlayer = bool(randi() % 2)
 	if showPlayer:
 		playerIndex = randi_range(1, 10)
-	for f in DirAccess.get_files_at("res://orbs"):
-		if f.ends_with(".png"):
-			orbpics.append(f)
 
 
 # Called every frame. 'delta' is the elapsed time since the 
@@ -56,12 +64,14 @@ func _on_orb_timer_timeout() -> void:
 		newOrb.orb.scale *= Vector2(1.5, 1.5)
 		newOrb.collision_shape_2d_2.scale *= Vector2(1.5, 1.5)
 	else:
-		img = load("res://orbs/"+orbpics[randi() % orbpics.size()])
+		img = load(orbpics[randi() % orbpics.size()])
+		print(orbpics)
 		newOrb.orb.texture = img
 		newOrb.collision_shape_2d.disabled = false
 		newOrb.collision_shape_2d_2.disabled = true
 		newOrb.orb.scale *= Vector2(randomScale, randomScale)
 		newOrb.collision_shape_2d.scale *= Vector2(randomScale, randomScale)
+	newOrb.apply_impulse(Vector2(randf()/4.0, 0))
 	orb_timer.wait_time = randf_range(.5, 2)
 	if orbindex >= orbcount:
 		end()
