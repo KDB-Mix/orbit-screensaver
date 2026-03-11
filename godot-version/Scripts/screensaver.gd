@@ -30,6 +30,7 @@ var orbpics = [
 
 # Called when the node enters the scene tree for the first time.
 func _ready() -> void:
+	Engine.max_fps = ConfigSave.settings["fps"]
 	get_viewport().transparent_bg = ConfigSave.settings["transparentBG"]
 	RenderingServer.set_default_clear_color(Color(ConfigSave.settings["bgColor"]))
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
@@ -65,7 +66,6 @@ func _on_orb_timer_timeout() -> void:
 		newOrb.collision_shape_2d_2.scale *= Vector2(1.5, 1.5)
 	else:
 		img = load(orbpics[randi() % orbpics.size()])
-		print(orbpics)
 		newOrb.orb.texture = img
 		newOrb.collision_shape_2d.disabled = false
 		newOrb.collision_shape_2d_2.disabled = true
