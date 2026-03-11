@@ -105,3 +105,15 @@ func _on_pre_start_over_timer_timeout() -> void:
 	pre_start_over_timer.stop()
 	bottom_plane.disabled = false
 	start_over_timer.start()
+
+
+func _input(event):
+	if event is InputEventMouseMotion:
+		quit()
+	#if event is InputEventKey:
+		#quit()
+	#if event is InputEventMouseButton:
+		#quit()
+
+func quit():
+	get_tree().quit()

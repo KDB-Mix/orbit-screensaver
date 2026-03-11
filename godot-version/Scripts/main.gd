@@ -5,7 +5,7 @@ extends Node2D
 func _ready() -> void:
 	ConfigSave.load_config()
 	var args = OS.get_cmdline_args()
-	if "-s" in args:
+	if "-s" in args or "-window-id" in args:
 		get_tree().change_scene_to_file("res://Scenes/screensaver.tscn")
 	else:
 		get_tree().change_scene_to_file("res://Scenes/config.tscn")

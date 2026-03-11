@@ -11,9 +11,7 @@
 
 
 
-a stupid (but somehow cool) screensaver inspired by Orbit  
-yes, the extreme demon by Mindcap  
-and yeah, ballpit physics thanks to Hdanke  
+A linux port of MalikHW`s screensaver
 
 ## what is this
 
