@@ -6,6 +6,7 @@ const DEFAULTS = {
 	"fps": 30,
 	"transparentBG": false,
 	"bgColor": "000000ff",
+	"showPlayer": 50,
 	}
 
 var settings={}

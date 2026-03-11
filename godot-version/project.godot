@@ -23,7 +23,14 @@ ConfigSave="*uid://bihndaqw7tx53"
 
 [display]
 
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/resizable=false
 window/size/transparent=true
+window/size/maximize_disabled=true
+window/subwindows/embed_subwindows=false
+window/stretch/mode="viewport"
+window/stretch/aspect="expand"
 window/per_pixel_transparency/allowed=true
 
 [editor]
@@ -32,7 +39,12 @@ run/main_run_args="-s"
 
 [physics]
 
+2d/run_on_separate_thread=true
+common/physics_ticks_per_second=120
+2d/physics_engine="Rapier2D"
 3d/physics_engine="Jolt Physics"
+2d/default_gravity=3000.0
+2d/solver/solver_iterations=64
 
 [rendering]
 

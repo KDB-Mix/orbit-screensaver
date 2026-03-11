@@ -2,9 +2,36 @@
 
 [ext_resource type="Script" uid="uid://dfahrs3io6nmm" path="res://Scripts/screensaver.gd" id="1_voogc"]
 
+[sub_resource type="WorldBoundaryShape2D" id="WorldBoundaryShape2D_ayjqb"]
+
 [node name="Screensaver" type="Node2D" unique_id=667446424]
 script = ExtResource("1_voogc")
 
-[node name="ColorRect" type="ColorRect" parent="." unique_id=896231365]
-offset_right = 40.0
-offset_bottom = 40.0
+[node name="StaticBody2D" type="StaticBody2D" parent="." unique_id=998518508]
+
+[node name="bottomPlane" type="CollisionShape2D" parent="StaticBody2D" unique_id=195888412]
+shape = SubResource("WorldBoundaryShape2D_ayjqb")
+
+[node name="rightPlane" type="CollisionShape2D" parent="StaticBody2D" unique_id=17917994]
+rotation = -1.5707964
+shape = SubResource("WorldBoundaryShape2D_ayjqb")
+
+[node name="leftPlane" type="CollisionShape2D" parent="StaticBody2D" unique_id=273976029]
+rotation = 1.5707964
+shape = SubResource("WorldBoundaryShape2D_ayjqb")
+
+[node name="orbTimer" type="Timer" parent="." unique_id=614416668]
+
+[node name="endTimer" type="Timer" parent="." unique_id=2085288287]
+wait_time = 5.0
+
+[node name="preStartOverTimer" type="Timer" parent="." unique_id=1385017342]
+wait_time = 4.0
+
+[node name="startOverTimer" type="Timer" parent="." unique_id=351846227]
+wait_time = 2.0
+
+[connection signal="timeout" from="orbTimer" to="." method="_on_orb_timer_timeout"]
+[connection signal="timeout" from="endTimer" to="." method="_on_end_timer_timeout"]
+[connection signal="timeout" from="preStartOverTimer" to="." method="_on_pre_start_over_timer_timeout"]
+[connection signal="timeout" from="startOverTimer" to="." method="_on_start_over_timer_timeout"]

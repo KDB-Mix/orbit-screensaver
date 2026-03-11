@@ -1,0 +1,29 @@
+[gd_scene format=3 uid="uid://ix7ki81pc5ye"]
+
+[ext_resource type="Script" uid="uid://dyfybjvxco4dj" path="res://Scripts/orb.gd" id="1_ryljl"]
+[ext_resource type="Texture2D" uid="uid://ktkdm3n6rdjv" path="res://cube.png" id="2_ryljl"]
+
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_ryljl"]
+bounce = 0.5
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_xdlj8"]
+radius = 25.019993
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_4tb7o"]
+size = Vector2(48, 48)
+
+[node name="orb" type="RigidBody2D" unique_id=1177999234]
+mass = 0.1
+physics_material_override = SubResource("PhysicsMaterial_ryljl")
+script = ExtResource("1_ryljl")
+
+[node name="Orb" type="Sprite2D" parent="." unique_id=622251576]
+scale = Vector2(0.4, 0.4)
+texture = ExtResource("2_ryljl")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=643669588]
+shape = SubResource("CircleShape2D_xdlj8")
+disabled = true
+
+[node name="CollisionShape2D2" type="CollisionShape2D" parent="." unique_id=975935274]
+shape = SubResource("RectangleShape2D_4tb7o")
